@@ -68,8 +68,8 @@ assert.equal(distance.within, false);
 assert.equal(Math.round(distance.percent * 10) / 10, -4.5);
 assert.equal(presentation.nearestRangeDistance(103, range(100, 105)).percent, 0);
 
-const profile = presentation.profileGroups({ primaryClassification: "AI Infrastructure", companyTraits: ["MegaCap", "AIInfrastructure", "MegaCap"], lifecycle: null });
-assert.deepEqual(profile.traits, ["MegaCap", "AIInfrastructure"]);
+const profile = presentation.profileGroups({ primaryClassification: "Semiconductors", businessTrait: "MegaCap", riskTrait: "HighVolatility", companyTraits: ["obsolete free-form tag"], lifecycle: null });
+assert.deepEqual(profile.traits, ["MegaCap", "HighVolatility"], "presentation reads only the two canonical V2 trait slots");
 assert.equal(profile.visible.lifecycle, false);
 assert.equal(presentation.profileGroups({ isETF: true }).type, "etf");
 
@@ -77,7 +77,7 @@ const stablePresentationDecision = plan("buy");
 const beforePresentation = structuredClone(stablePresentationDecision);
 presentation.executionSemantics(stablePresentationDecision);
 presentation.priceMapModel({ currentPrice: 103, decision: stablePresentationDecision });
-presentation.profileGroups({ primaryClassification: "AI Infrastructure", companyTraits: ["MegaCap", "AIInfrastructure"] });
+presentation.profileGroups({ primaryClassification: "Semiconductors", businessTrait: "MegaCap", riskTrait: "HighVolatility", companyTraits: ["obsolete free-form tag"] });
 assert.deepEqual(stablePresentationDecision, beforePresentation, "presentation helpers must not mutate V1 decision values");
 
 assert.equal(presentation.translateReason("OBV and volume participation are confirming accumulation.", "zh"), "OBV 与成交量参与度正在确认资金吸筹。");

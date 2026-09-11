@@ -106,6 +106,12 @@ EOD_HISTORY_TIMEZONE = ZoneInfo("America/New_York")
 EOD_HISTORY_HOUR = 16
 EOD_HISTORY_MINUTE = 30
 EOD_HISTORY_NODE_RUNNER = os.path.join(ROOT, "历史记录", "生成决策快照.js")
+COMPANY_PROFILE_CLASSIFIER_NODE_RUNNER = os.path.join(ROOT, "scripts", "classify-company-profiles.js")
+COMPANY_PROFILE_TIMEZONE = ZoneInfo("America/New_York")
+COMPANY_PROFILE_REVIEW_MONTH = 3
+COMPANY_PROFILE_REVIEW_DAY = 31
+COMPANY_PROFILE_REVIEW_ENABLED = os.environ.get("COMPANY_PROFILE_REVIEW_ENABLED", "true").strip().lower() not in {"0", "false", "no", "n"}
+COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS = int(os.environ.get("COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS", "45"))
 CACHE = {}
 SEARCH_CACHE_SECONDS = 10 * 60
 SYMBOL_SEARCH_CACHE = {}
@@ -118,12 +124,15 @@ WATCHLIST_DB_PATH = os.environ.get("WATCHLIST_DB_PATH", "data/watchlist.db")
 MARKET_CACHE_DIR = os.environ.get("MARKET_CACHE_DIR", os.path.join("data", "cache"))
 MARKET_EVENTS_FILE = os.environ.get("MARKET_EVENTS_FILE", os.path.join(ROOT, "market_events.json"))
 WATCHLIST_LOCK = threading.Lock()
+COMPANY_PROFILE_LOCK = threading.Lock()
 QUOTE_FETCH_LOCK = threading.Lock()
 BACKGROUND_REFRESH_LOCK = threading.Lock()
 FULL_REFRESH_RUN_LOCK = threading.Lock()
 EOD_HISTORY_RUN_LOCK = threading.Lock()
+COMPANY_PROFILE_REVIEW_RUN_LOCK = threading.Lock()
 BACKGROUND_REFRESH_THREAD_STARTED = False
 EOD_HISTORY_THREAD_STARTED = False
+COMPANY_PROFILE_REVIEW_THREAD_STARTED = False
 BACKGROUND_REFRESH_STATE = {
     "enabled": BACKGROUND_MARKET_REFRESH_ENABLED,
     "running": False,
@@ -144,7 +153,12 @@ EOD_HISTORY_STATE = {
     "last_error": None,
     "next_run_at": None,
 }
-WATCHLIST_SCHEMA_VERSION = 1
+COMPANY_PROFILE_REVIEW_STATE = {
+    "enabled": COMPANY_PROFILE_REVIEW_ENABLED, "running": False,
+    "last_started_at": None, "last_completed_at": None, "last_status": None,
+    "last_error": None, "next_run_at": None,
+}
+WATCHLIST_SCHEMA_VERSION = 2
 WATCHLIST_MIGRATION_TICKERS = ["QQQ"]
 DEFAULT_SHARED_WATCHLIST = [
     "NVDA", "TSLA", "AMD", "BABA", "GOOGL", "AMZN", "AAPL", "CRCL", "FFAI", "HIMS",
@@ -309,6 +323,23 @@ def init_watchlist_db():
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS company_profiles (
+                  ticker TEXT PRIMARY KEY,
+                  primary_classification TEXT,
+                  business_trait TEXT,
+                  risk_trait TEXT,
+                  lifecycle TEXT,
+                  profile_status TEXT NOT NULL,
+                  profile_source TEXT NOT NULL,
+                  profile_evidence_json TEXT,
+                  profile_confidence REAL NOT NULL DEFAULT 0.82,
+                  last_profile_review TEXT,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
             if not db_exists:
                 for item in normalize_watchlist_items(DEFAULT_SHARED_WATCHLIST):
                     conn.execute(
@@ -324,6 +355,261 @@ def init_watchlist_db():
                     )
                 conn.execute(f"PRAGMA user_version = {WATCHLIST_SCHEMA_VERSION}")
             conn.commit()
+
+
+def _iso_utc_now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _profile_row_to_payload(row):
+    if not row:
+        return None
+    try:
+        evidence = json.loads(row["profile_evidence_json"] or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        evidence = {}
+    business_trait = row["business_trait"]
+    risk_trait = row["risk_trait"]
+    return {
+        "type": "stock", "isETF": False,
+        "primaryClassification": row["primary_classification"],
+        "businessTrait": business_trait,
+        "riskTrait": risk_trait,
+        "companyTraits": [value for value in (business_trait, risk_trait) if value],
+        "lifecycle": row["lifecycle"],
+        "profileStatus": row["profile_status"],
+        "profileSource": row["profile_source"],
+        "profileEvidence": evidence,
+        # Preserve the existing Profile Confidence field and its engine role.
+        "profileConfidence": float(row["profile_confidence"]),
+        "lastProfileReview": row["last_profile_review"],
+    }
+
+
+def load_company_profiles(tickers):
+    normalized = normalize_watchlist(tickers)
+    if not normalized:
+        return {}
+    init_watchlist_db()
+    placeholders = ",".join("?" for _ in normalized)
+    with COMPANY_PROFILE_LOCK:
+        with get_watchlist_connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM company_profiles WHERE ticker IN ({placeholders})",
+                normalized,
+            ).fetchall()
+    return {row["ticker"]: _profile_row_to_payload(row) for row in rows}
+
+
+def _profile_review_due(last_review, now=None):
+    current = (now or datetime.now(COMPANY_PROFILE_TIMEZONE)).astimezone(COMPANY_PROFILE_TIMEZONE)
+    if not last_review:
+        return True
+    try:
+        prior = datetime.fromisoformat(str(last_review).replace("Z", "+00:00")).astimezone(COMPANY_PROFILE_TIMEZONE)
+    except (TypeError, ValueError):
+        return True
+    if (current.month, current.day) < (COMPANY_PROFILE_REVIEW_MONTH, COMPANY_PROFILE_REVIEW_DAY):
+        return False
+    return prior.year < current.year
+
+
+def _profile_is_etf(quote):
+    metadata = quote.get("metadata") if isinstance(quote, dict) else {}
+    return str((metadata or {}).get("quoteType") or "").upper() == "ETF"
+
+
+def _profile_classifier_node_executable():
+    return eod_history_node_executable()
+
+
+def _classify_company_profiles(metadata_by_ticker):
+    """Run the one canonical JavaScript classifier once for a compact batch."""
+    if not metadata_by_ticker:
+        return {}
+    node = _profile_classifier_node_executable()
+    if not node:
+        raise RuntimeError("Node.js is required for automatic Company Profile classification")
+    if not os.path.isfile(COMPANY_PROFILE_CLASSIFIER_NODE_RUNNER):
+        raise RuntimeError(f"Company Profile classifier runner is missing: {COMPANY_PROFILE_CLASSIFIER_NODE_RUNNER}")
+    temp_directory = tempfile.mkdtemp(prefix="company-profile-")
+    input_path = os.path.join(temp_directory, "input.json")
+    output_path = os.path.join(temp_directory, "output.json")
+    try:
+        with open(input_path, "w", encoding="utf-8") as handle:
+            json.dump({"metadataByTicker": metadata_by_ticker}, handle, ensure_ascii=False, separators=(",", ":"))
+        completed = subprocess.run(
+            [node, COMPANY_PROFILE_CLASSIFIER_NODE_RUNNER, input_path, output_path], cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "Company Profile classifier failed").strip())
+        with open(output_path, "r", encoding="utf-8") as handle:
+            return (json.load(handle).get("profiles") or {})
+    finally:
+        shutil.rmtree(temp_directory, ignore_errors=True)
+
+
+def _merged_profile(existing, classified, reviewed_at, allow_replace=False):
+    previous = existing or {}
+    current = classified or {}
+    # Normal refreshes may only fill an incomplete slot.  They must not let a
+    # provider metadata variation churn an already validated field.  The
+    # annual March 31 review is the sole path that may replace a populated
+    # value, and even that path keeps it when the new evidence is absent.
+    def choose(field):
+        prior = previous.get(field)
+        candidate = current.get(field)
+        if allow_replace and candidate:
+            return candidate
+        return prior or candidate
+
+    primary = choose("primaryClassification")
+    business = choose("businessTrait")
+    risk = choose("riskTrait")
+    lifecycle = choose("lifecycle")
+    slots = [primary, business, risk, lifecycle]
+    status = "complete" if all(slots) else "incomplete" if any(slots) else "unavailable"
+    current_evidence = current.get("profileEvidence") if isinstance(current.get("profileEvidence"), dict) else {}
+    previous_evidence = previous.get("profileEvidence") if isinstance(previous.get("profileEvidence"), dict) else {}
+    field_values = {
+        "primaryClassification": primary,
+        "businessTrait": business,
+        "riskTrait": risk,
+        "lifecycle": lifecycle,
+    }
+    previous_values = {
+        "primaryClassification": previous.get("primaryClassification"),
+        "businessTrait": previous.get("businessTrait"),
+        "riskTrait": previous.get("riskTrait"),
+        "lifecycle": previous.get("lifecycle"),
+    }
+    evidence = {}
+    for key in field_values:
+        # Evidence accompanies the value that actually survives the merge.
+        use_current = field_values[key] == current.get(key) and (
+            allow_replace or not previous_values[key]
+        )
+        evidence[key] = (current_evidence.get(key) if use_current else None) or previous_evidence.get(key) or []
+    changed = any(field_values[key] != previous_values[key] for key in field_values)
+    return {
+        "primaryClassification": primary, "businessTrait": business, "riskTrait": risk, "lifecycle": lifecycle,
+        "companyTraits": [value for value in (business, risk) if value],
+        "profileStatus": status, "profileSource": "automatic", "profileEvidence": evidence,
+        # V2 deliberately retains the existing Profile Confidence behavior.
+        "profileConfidence": float(previous.get("profileConfidence", 0.82)),
+        "lastProfileReview": reviewed_at if (not previous or allow_replace or changed) else previous.get("lastProfileReview"),
+    }
+
+
+def _upsert_company_profiles(profiles):
+    if not profiles:
+        return
+    init_watchlist_db()
+    rows = []
+    for ticker, profile in profiles.items():
+        rows.append((
+            ticker, profile.get("primaryClassification"), profile.get("businessTrait"), profile.get("riskTrait"), profile.get("lifecycle"),
+            profile.get("profileStatus") or "unavailable", profile.get("profileSource") or "automatic",
+            json.dumps(profile.get("profileEvidence") or {}, ensure_ascii=False, separators=(",", ":")),
+            float(profile.get("profileConfidence", 0.82)), profile.get("lastProfileReview"), _iso_utc_now(),
+        ))
+    with COMPANY_PROFILE_LOCK:
+        with get_watchlist_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO company_profiles (
+                  ticker, primary_classification, business_trait, risk_trait, lifecycle,
+                  profile_status, profile_source, profile_evidence_json, profile_confidence,
+                  last_profile_review, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                  primary_classification=excluded.primary_classification,
+                  business_trait=excluded.business_trait, risk_trait=excluded.risk_trait,
+                  lifecycle=excluded.lifecycle, profile_status=excluded.profile_status,
+                  profile_source=excluded.profile_source, profile_evidence_json=excluded.profile_evidence_json,
+                  profile_confidence=excluded.profile_confidence,
+                  last_profile_review=excluded.last_profile_review, updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+            conn.commit()
+
+
+def _profile_requires_write(previous, merged, annual_review=False):
+    """Avoid hourly profile churn while retaining a real annual review record.
+
+    A normal refresh may classify an incomplete record again because provider
+    metadata can arrive gradually.  Persist only when it fills a slot or
+    changes the compact status.  The scheduled March 31 review is different:
+    its review timestamp is meaningful even when the canonical values remain
+    unchanged, so it is written once the review has actually run.
+    """
+    if not previous:
+        return True
+    if annual_review:
+        return True
+    compact_fields = (
+        "primaryClassification", "businessTrait", "riskTrait", "lifecycle",
+        "profileStatus", "profileSource",
+    )
+    return any(previous.get(field) != merged.get(field) for field in compact_fields)
+
+
+def ensure_company_profiles_for_quotes(quotes, force_review=False, now=None):
+    """Decorate a payload with compact persistent automatic stock profiles.
+
+    Complete profiles are never reclassified during normal hourly refreshes.
+    Incomplete profiles may fill a missing slot when new metadata becomes
+    available; existing validated slots remain immutable until the March 31 ET
+    annual review.
+    """
+    tickers = [ticker for ticker, quote in (quotes or {}).items() if isinstance(quote, dict) and not _profile_is_etf(quote)]
+    existing = load_company_profiles(tickers)
+    now_et = (now or datetime.now(COMPANY_PROFILE_TIMEZONE)).astimezone(COMPANY_PROFILE_TIMEZONE)
+    candidates = {}
+    for ticker in tickers:
+        quote = quotes[ticker]
+        profile = existing.get(ticker)
+        needs_initial_or_missing = not profile or profile.get("profileStatus") != "complete"
+        due = force_review and _profile_review_due(profile.get("lastProfileReview") if profile else None, now_et)
+        metadata = quote.get("metadata") if isinstance(quote.get("metadata"), dict) else {}
+        if (needs_initial_or_missing or due) and any(metadata.get(key) for key in ("sector", "industry", "businessSummary", "marketCap", "beta", "revenueGrowth", "profitMargins")):
+            candidates[ticker] = metadata
+    if candidates:
+        try:
+            classified = _classify_company_profiles(candidates)
+        except Exception as exc:
+            # Profile enrichment is optional contextual metadata.  It must
+            # never make a valid Technical/Market Dashboard snapshot fail when
+            # the one-shot classifier runtime is temporarily unavailable.
+            print(f"[COMPANY PROFILE] automatic classification skipped: {exc}")
+            classified = {}
+        reviewed_at = now_et.isoformat(timespec="seconds")
+        updates = {}
+        for ticker in candidates:
+            candidate = classified.get(ticker)
+            if candidate is None:
+                continue
+            prior = existing.get(ticker)
+            annual_review = force_review and _profile_review_due(
+                (prior or {}).get("lastProfileReview"), now_et,
+            )
+            merged = _merged_profile(
+                prior, candidate, reviewed_at, allow_replace=annual_review,
+            )
+            if _profile_requires_write(prior, merged, annual_review=annual_review):
+                updates[ticker] = merged
+        if updates:
+            _upsert_company_profiles(updates)
+            existing.update(updates)
+    for ticker, quote in (quotes or {}).items():
+        if not isinstance(quote, dict) or _profile_is_etf(quote):
+            continue
+        profile = existing.get(ticker)
+        if profile:
+            quote.setdefault("metadata", {})["classification"] = profile
+    return existing
 
 
 def row_to_watchlist_item(row):
@@ -2060,6 +2346,10 @@ def build_unavailable_quote(ticker, reason, stale_value=None):
             "state": metadata.get("state"),
             "exchange": metadata.get("exchange"),
             "quoteType": metadata.get("quoteType"),
+            "marketCap": metadata.get("marketCap"),
+            "revenueGrowth": metadata.get("revenueGrowth"),
+            "profitMargins": metadata.get("profitMargins"),
+            "beta": metadata.get("beta"),
             "ipoDate": metadata.get("ipoDate"),
             "earningsDate": metadata.get("earningsDate"),
             "earningsTimestamp": metadata.get("earningsTimestamp"),
@@ -3637,6 +3927,13 @@ def fetch_us_quote_with_yfinance(ticker, include_options=False):
             "state": info.get("state"),
             "exchange": info.get("exchange") or info.get("fullExchangeName"),
             "quoteType": info.get("quoteType"),
+            # Compact slow-moving metadata is provided only for deterministic
+            # Company Profile classification—not for live Recommendation
+            # scoring. It avoids a second provider request for profiles.
+            "marketCap": _safe_int(info.get("marketCap")) or _safe_int(fast_info.get("marketCap")),
+            "revenueGrowth": _safe_float(info.get("revenueGrowth")),
+            "profitMargins": _safe_float(info.get("profitMargins")),
+            "beta": _safe_float(info.get("beta")),
             "floatShares": _safe_int(info.get("floatShares")),
             "sharesOutstanding": _safe_int(info.get("sharesOutstanding")) or _safe_int(fast_info.get("shares")),
             "ipoDate": iso_from_epoch(info.get("firstTradeDateEpochUtc")),
@@ -4584,6 +4881,10 @@ def build_market_data_payload(tickers, force=False, auto_refresh=False, cache_on
         for failure in hard_failed
         if failure.get("ticker") or failure.get("symbol")
     })
+    # Profiles are current, persistent metadata attached to the snapshot. This
+    # is intentionally separate from the Decision/EOD history and does not
+    # require or retain the full quote payload after the request completes.
+    ensure_company_profiles_for_quotes(quotes)
     items = [quote_to_market_item(ticker, quotes[ticker]) for ticker in normalized_tickers]
     success_count = sum(
         1 for quote in quotes.values()
@@ -5059,6 +5360,72 @@ def start_eod_history_scheduler():
         EOD_HISTORY_STATE["next_run_at"] = next_eod_history_run().isoformat(timespec="seconds")
     thread = threading.Thread(target=eod_history_scheduler_loop, name="eod-decision-history", daemon=True)
     thread.start()
+    return True
+
+
+def company_profile_now_et(now=None):
+    current = now or datetime.now(COMPANY_PROFILE_TIMEZONE)
+    return current.replace(tzinfo=COMPANY_PROFILE_TIMEZONE) if current.tzinfo is None else current.astimezone(COMPANY_PROFILE_TIMEZONE)
+
+
+def next_company_profile_review(now=None):
+    current = company_profile_now_et(now)
+    candidate = current.replace(month=COMPANY_PROFILE_REVIEW_MONTH, day=COMPANY_PROFILE_REVIEW_DAY, hour=3, minute=30, second=0, microsecond=0)
+    if candidate <= current:
+        candidate = candidate.replace(year=candidate.year + 1)
+    return candidate
+
+
+def run_company_profile_annual_review_once(now=None, reason="scheduled_profile_review"):
+    """Refresh metadata and re-run the canonical classifier on March 31 ET."""
+    current = company_profile_now_et(now)
+    if (current.month, current.day) != (COMPANY_PROFILE_REVIEW_MONTH, COMPANY_PROFILE_REVIEW_DAY):
+        return {"status": "skipped", "reason": "not_annual_review_date"}
+    with COMPANY_PROFILE_REVIEW_RUN_LOCK:
+        started = current.isoformat(timespec="seconds")
+        with BACKGROUND_REFRESH_LOCK:
+            COMPANY_PROFILE_REVIEW_STATE.update({"running": True, "last_started_at": started, "last_status": "running", "last_error": None})
+        try:
+            with FULL_REFRESH_RUN_LOCK:
+                summary = _refresh_market_cache_for_watchlist(reason=reason)
+                if not summary.get("completed"):
+                    raise RuntimeError(summary.get("error") or "annual profile full refresh failed")
+                tickers = load_shared_watchlist()
+                payload = build_market_data_payload(tickers, force=False, auto_refresh=False, cache_only=True, refresh_market_context=False)
+                ensure_company_profiles_for_quotes(payload.get("quotes") or {}, force_review=True, now=current)
+            completed = datetime.now(COMPANY_PROFILE_TIMEZONE).isoformat(timespec="seconds")
+            with BACKGROUND_REFRESH_LOCK:
+                COMPANY_PROFILE_REVIEW_STATE.update({"running": False, "last_completed_at": completed, "last_status": "success", "last_error": None})
+            print(f"[COMPANY PROFILE] annual review complete {current.strftime('%Y-%m-%d ET')}")
+            return {"status": "success", "reviewed": len(tickers)}
+        except Exception as exc:
+            with BACKGROUND_REFRESH_LOCK:
+                COMPANY_PROFILE_REVIEW_STATE.update({"running": False, "last_completed_at": datetime.now(COMPANY_PROFILE_TIMEZONE).isoformat(timespec="seconds"), "last_status": "failed", "last_error": str(exc)})
+            print(f"[COMPANY PROFILE] annual review FAILED: {exc}")
+            return {"status": "failed", "error": str(exc)}
+
+
+def company_profile_review_scheduler_loop():
+    if COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS > 0:
+        time.sleep(COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS)
+    while True:
+        next_run = next_company_profile_review()
+        with BACKGROUND_REFRESH_LOCK:
+            COMPANY_PROFILE_REVIEW_STATE["next_run_at"] = next_run.isoformat(timespec="seconds")
+        time.sleep(max(1, (next_run - datetime.now(COMPANY_PROFILE_TIMEZONE)).total_seconds()))
+        run_company_profile_annual_review_once(reason="scheduled_profile_review")
+
+
+def start_company_profile_review_scheduler():
+    global COMPANY_PROFILE_REVIEW_THREAD_STARTED
+    if not COMPANY_PROFILE_REVIEW_ENABLED:
+        return False
+    with BACKGROUND_REFRESH_LOCK:
+        if COMPANY_PROFILE_REVIEW_THREAD_STARTED:
+            return False
+        COMPANY_PROFILE_REVIEW_THREAD_STARTED = True
+        COMPANY_PROFILE_REVIEW_STATE["next_run_at"] = next_company_profile_review().isoformat(timespec="seconds")
+    threading.Thread(target=company_profile_review_scheduler_loop, name="company-profile-annual-review", daemon=True).start()
     return True
 
 
@@ -5745,6 +6112,7 @@ def serve_static_file(filename):
 
 start_background_market_refresh_scheduler()
 start_eod_history_scheduler()
+start_company_profile_review_scheduler()
 
 
 def main():

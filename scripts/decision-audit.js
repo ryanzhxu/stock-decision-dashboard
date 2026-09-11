@@ -280,7 +280,10 @@ async function main() {
     return [ticker, { appliedTraits: value.appliedTraits, effectiveProfileModifiers: value.effectiveProfileModifiers }];
   }));
   const companyCoverage = tickers.map((ticker) => {
-    const profile = profiles.profileFor(ticker);
+    // The V2 classifier is metadata-driven and has no ordinary-stock ticker
+    // map. Feed the same compact cache metadata used for the decision rather
+    // than accidentally reporting every stock as unclassified.
+    const profile = profiles.profileFor(ticker, rows[ticker]?.metadata || rows[ticker] || {});
     return profile.isETF
       ? { ticker, type: "ETF", primaryClassification: null, traitsCount: 0, lifecycle: null, leveraged: profile.leveraged, direction: profile.direction, underlying: profile.underlying }
       : { ticker, type: "stock", primaryClassification: profile.primaryClassification, traitsCount: profile.companyTraits.length, lifecycle: profile.lifecycle };

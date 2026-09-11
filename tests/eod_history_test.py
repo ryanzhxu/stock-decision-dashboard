@@ -57,8 +57,11 @@ def record(ticker="NVDA", horizon="short", **changes):
         "technical_features": {"horizon": horizon, "momentum": {"rsi": {"value": 58}}},
         "supporting_reasons": ["Trend is constructive."], "limiting_reasons": ["Price is neutral."],
         "primary_classification": "Semiconductors", "lifecycle": "EstablishedLeader",
-        "company_traits": ["Semiconductor", "AIInfrastructure", "LargeCap"],
-        "applied_profile_modifiers": {"effective": {"riskSensitivity": 1.0}},
+        "company_traits": ["MegaCap", "HighVolatility"],
+        "applied_profile_modifiers": {
+            "effective": {"riskSensitivity": 1.0}, "business_trait": "MegaCap",
+            "risk_trait": "HighVolatility", "profile_status": "complete", "profile_source": "automatic",
+        },
         "leveraged": None, "etf_direction": None, "underlying": None, "etf_modifiers": None,
         "material_change": [],
     }
@@ -125,6 +128,19 @@ class EodHistoryDatabaseTests(unittest.TestCase):
         result = history_db.write_snapshot("2026-08-18", "start", "end", [record("MU", data_status="unavailable", action=None, confidence=None, technical_features=None, current_price=None)])
         self.assertEqual(result["unavailable_count"], 1)
         self.assertEqual(self.rows()[0][5], "unavailable")
+
+    def test_active_canonical_profile_snapshot_is_stored_additively(self):
+        history_db.write_snapshot("2026-08-18", "start", "end", [record()])
+        conn = sqlite3.connect(self.db)
+        try:
+            raw = conn.execute("SELECT company_traits_json, applied_profile_modifiers_json FROM decision_history WHERE ticker='NVDA'").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(json.loads(raw[0]), ["MegaCap", "HighVolatility"])
+        profile = json.loads(raw[1])
+        self.assertEqual(profile["business_trait"], "MegaCap")
+        self.assertEqual(profile["risk_trait"], "HighVolatility")
+        self.assertEqual(profile["profile_status"], "complete")
 
     def test_failed_transaction_rolls_back_incomplete_rows(self):
         good = record("GOOD", "short")

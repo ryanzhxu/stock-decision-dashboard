@@ -29,7 +29,7 @@ const I18N = {
     recommendation: "Action", confidence: "Confidence", invalidation: "Invalidation", currentPrice: "Current Price",
     recommendationConfidence: "Recommendation Confidence", confidenceHelp: "Recommendation Confidence measures the consistency and stability of support for this action. It is not a probability of future price appreciation.",
     recommendedBuyAddRange: "Recommended Buy / Add Range", potentialAddRange: "Potential Add Range", reevaluationRange: "Re-evaluation Range", potentialReduceRange: "Potential Reduce Range", recommendedReduceRange: "Recommended Reduce Range", recommendedExitRange: "Recommended Exit Range", riskInvalidation: "Risk / Invalidation", avoidNoEntry: "Avoid / No Entry", currentPrice: "Current Price", withinRange: "Currently in this range", distanceToRange: "Distance",
-    finalDecision: "Final Decision", decisionCardHint: "Select a horizon card to view its price map, decision drivers, and execution plan.", decisionPriceMap: "Price Landscape", whyThisDecision: "Why This Decision", executionPlan: "Execution Plan", positionGuidance: "Position Guidance", marketRiskRegime: "Market Risk Regime", marketImpact: "Impact on this stock", companyModel: "Company Model", primaryClassification: "Primary Classification", companyTraits: "Company Traits", lifecycle: "Lifecycle", profileConfidence: "Profile Confidence", lastReview: "Last Profile Review", appliedModifiers: "Applied Modifiers", etfProfile: "ETF Profile", leveraged: "Leveraged", direction: "Direction", underlying: "Underlying", yes: "Yes", no: "No", longDirection: "Long", inverseDirection: "Inverse", noDecision: "Insufficient data to generate a recommendation for this horizon.",
+    finalDecision: "Final Decision", decisionCardHint: "Select a horizon card to view its price map, decision drivers, and execution plan.", decisionPriceMap: "Price Landscape", whyThisDecision: "Why This Decision", executionPlan: "Execution Plan", positionGuidance: "Position Guidance", marketRiskRegime: "Market Risk Regime", marketImpact: "Impact on this stock", companyModel: "Company Model", primaryClassification: "Primary Classification", companyTraits: "Company Traits", businessTrait: "Business Trait", riskTrait: "Risk / Behavior Trait", lifecycle: "Lifecycle", profileConfidence: "Profile Confidence", lastReview: "Last Profile Review", profileNotClassified: "Company profile classification is currently unavailable.", appliedModifiers: "Applied Modifiers", etfProfile: "ETF Profile", leveraged: "Leveraged", direction: "Direction", underlying: "Underlying", yes: "Yes", no: "No", longDirection: "Long", inverseDirection: "Inverse", noDecision: "Insufficient data to generate a recommendation for this horizon.",
     shortHorizon: "1–30 Days", midHorizon: "1–6 Months", longHorizon: ">6 Months", support: "Supporting evidence", limiting: "Limiting evidence", regime: "Regime", earningsProximity: "Earnings proximity", nextEarnings: "Next Earnings", daysAgo: "days ago", days: "days", supportive: "Supportive", neutral: "Neutral", restrictive: "Restrictive", shockSensitive: "Shock-sensitive",
     technicalOverview: "Technical Overview", fibonacciStructure: "Fibonacci Structure", fibonacciDescription: "Confirmed swing anchors and retracement / extension levels. Technical display data only.", historicalVolume: "52-Week / Historical Position and Volume", advancedSwingMetadata: "Advanced Swing Metadata", retracement: "Retracement", extension: "Extension", level: "Level", distance: "Distance", swingHigh: "Swing High", swingLow: "Swing Low", swingRange: "Swing Range", currentPosition: "Current Position", nearestBelow: "Nearest Below", nearestAbove: "Nearest Above", sourceTimeframe: "Source timeframe", lookbackBars: "Lookback bars", fallbackUsed: "Fallback used", fallbackReason: "Fallback reason", technicalUnavailable: "Technical data is currently unavailable.",
     trendSummary: "Trend", momentumSummary: "Momentum", volatilitySummary: "Volatility", relativeStrengthSummary: "Relative Strength", participationSummary: "Participation", marketStatus: "Market Status", current: "Current", change5d: "5D Change", change20d: "20D Change", expanded: "Expanded", collapsed: "Collapsed", primaryInterval: "Primary interval", supportingIntervals: "Supporting intervals shown where available.",
@@ -45,7 +45,7 @@ const I18N = {
     aiDecision: "AI 决策", technical: "技术面", market: "市场数据", price: "价格", updated: "更新时间", unavailable: "—",
     recommendation: "操作", confidence: "置信度", invalidation: "失效价", currentPrice: "当前价格",
     recommendationConfidence: "推荐可信度", confidenceHelp: "推荐可信度表示当前数据对该操作建议的支持一致性和稳定程度，不代表未来上涨概率。", recommendedBuyAddRange: "推荐买入／加仓区", potentialAddRange: "潜在加仓区", reevaluationRange: "重新评估区", potentialReduceRange: "潜在减仓区", recommendedReduceRange: "推荐减仓区", recommendedExitRange: "推荐退出区", riskInvalidation: "风险／失效位", avoidNoEntry: "回避／不建立新仓", currentPrice: "当前价格", withinRange: "当前位于区间内", distanceToRange: "距离",
-    finalDecision: "最终决策", decisionCardHint: "点击周期卡片查看对应的价格图、决策原因和执行计划。", decisionPriceMap: "价格区间图", whyThisDecision: "为什么是这个决策", executionPlan: "执行计划", positionGuidance: "仓位指引", marketRiskRegime: "市场风险环境", marketImpact: "对该股票的影响", companyModel: "公司模型", primaryClassification: "主要分类", companyTraits: "公司特征标签", lifecycle: "生命周期", profileConfidence: "画像可信度", lastReview: "最近画像复核", appliedModifiers: "已应用修饰器", etfProfile: "ETF 画像", leveraged: "杠杆", direction: "方向", underlying: "标的", yes: "是", no: "否", longDirection: "做多", inverseDirection: "反向", noDecision: "数据不足，暂无法生成该周期推荐。", shortHorizon: "1–30 天", midHorizon: "1–6 个月", longHorizon: ">6 个月", support: "支持当前推荐", limiting: "限制当前推荐", regime: "风险环境", earningsProximity: "财报临近", nextEarnings: "下一次财报", daysAgo: "天前", days: "天", supportive: "支持", neutral: "中性", restrictive: "限制", shockSensitive: "对冲击敏感",
+    finalDecision: "最终决策", decisionCardHint: "点击周期卡片查看对应的价格图、决策原因和执行计划。", decisionPriceMap: "价格区间图", whyThisDecision: "为什么是这个决策", executionPlan: "执行计划", positionGuidance: "仓位指引", marketRiskRegime: "市场风险环境", marketImpact: "对该股票的影响", companyModel: "公司模型", primaryClassification: "主要分类", companyTraits: "公司特征标签", businessTrait: "业务特征", riskTrait: "风险／行为特征", lifecycle: "生命周期", profileConfidence: "画像可信度", lastReview: "最近画像复核", profileNotClassified: "公司画像分类暂不可用。", appliedModifiers: "已应用修饰器", etfProfile: "ETF 画像", leveraged: "杠杆", direction: "方向", underlying: "标的", yes: "是", no: "否", longDirection: "做多", inverseDirection: "反向", noDecision: "数据不足，暂无法生成该周期推荐。", shortHorizon: "1–30 天", midHorizon: "1–6 个月", longHorizon: ">6 个月", support: "支持当前推荐", limiting: "限制当前推荐", regime: "风险环境", earningsProximity: "财报临近", nextEarnings: "下一次财报", daysAgo: "天前", days: "天", supportive: "支持", neutral: "中性", restrictive: "限制", shockSensitive: "对冲击敏感",
     technicalOverview: "技术概览", fibonacciStructure: "斐波那契结构", fibonacciDescription: "已确认的摆动锚点与回撤／扩展水平；仅作技术数据展示。", historicalVolume: "52 周／历史位置与成交量", advancedSwingMetadata: "高级摆动元数据", retracement: "回撤", extension: "扩展", level: "级别", distance: "距离", swingHigh: "摆动高点", swingLow: "摆动低点", swingRange: "摆动区间", currentPosition: "当前位置", nearestBelow: "最近下方水平", nearestAbove: "最近上方水平", sourceTimeframe: "来源周期", lookbackBars: "回看 K 线数", fallbackUsed: "已使用回退", fallbackReason: "回退原因", primaryClassification: "主要分类", technicalUnavailable: "技术数据暂不可用。", trendSummary: "趋势", momentumSummary: "动量", volatilitySummary: "波动", relativeStrengthSummary: "相对强弱", participationSummary: "参与度", marketStatus: "市场状态", current: "当前", change5d: "5 日变化", change20d: "20 日变化", expanded: "展开", collapsed: "收起", primaryInterval: "主周期", supportingIntervals: "支持周期会在可用时显示。",
     supporting: "支持证据", limiting: "限制因素", marketState: "市场状态",
     technicalData: "标准化技术数据", dataStatus: "数据状态", trend: "趋势", momentum: "动量", volatility: "波动", participation: "参与度",
@@ -149,12 +149,21 @@ function profileFor(ticker, quote = {}) {
   const defined = window.ProfileDefinitions?.profileFor?.(ticker, quote.metadata || quote) || {};
   const upstream = quote.metadata?.classification || quote.classification || {};
   if (defined.isETF || defined.type === "etf") return { ...defined };
+  const businessTrait = upstream.businessTrait || upstream.business_trait || defined.businessTrait || null;
+  const riskTrait = upstream.riskTrait || upstream.risk_trait || defined.riskTrait || null;
   return {
     ...defined,
-    primaryClassification: upstream.primaryClassification || upstream.primary_classification || defined.primaryClassification || quote.metadata?.industry || quote.metadata?.sector || "Unclassified Equity",
-    companyTraits: [...new Set([...(defined.companyTraits || []), ...(upstream.companyTraits || upstream.company_traits || [])])],
+    ...upstream,
+    primaryClassification: upstream.primaryClassification || upstream.primary_classification || defined.primaryClassification || null,
+    businessTrait,
+    riskTrait,
+    companyTraits: [businessTrait, riskTrait].filter(Boolean),
     lifecycle: upstream.lifecycle || defined.lifecycle || null,
-    scoringProfile: upstream.scoringProfile || upstream.scoring_profile || defined.scoringProfile || "generic",
+    profileStatus: upstream.profileStatus || upstream.profile_status || defined.profileStatus || "unavailable",
+    profileSource: upstream.profileSource || upstream.profile_source || defined.profileSource || "automatic",
+    profileEvidence: upstream.profileEvidence || upstream.profile_evidence || defined.profileEvidence || {},
+    category: upstream.primaryClassification || upstream.primary_classification || defined.primaryClassification || null,
+    tags: [businessTrait, riskTrait].filter(Boolean),
   };
 }
 
@@ -265,7 +274,7 @@ function renderStockList() {
     <article class="stock-item${row.ticker === state.selectedTicker ? " active" : ""}" data-open-ticker="${escapeHtml(row.ticker)}" role="button" tabindex="0">
       <div class="stock-item-header">
         <div class="stock-copy">
-          <div class="stock-symbol-row"><strong class="stock-symbol">${escapeHtml(row.ticker)}</strong><span class="stock-profile-pill">${escapeHtml(row.classification.category)}</span></div>
+          <div class="stock-symbol-row"><strong class="stock-symbol">${escapeHtml(row.ticker)}</strong>${row.classification.category ? `<span class="stock-profile-pill">${escapeHtml(row.classification.category)}</span>` : ""}</div>
           <div class="stock-company">${escapeHtml(row.companyName)}</div>
           <div class="stock-price-row"><strong>${formatPrice(row.price, row.currency)}</strong><span class="stock-day-move ${row.changePercent >= 0 ? "buy" : "sell"}">${t("dayMove")} ${formatPct(row.changePercent)}</span></div>
         </div>
@@ -517,6 +526,7 @@ function profileFromRow(row) {
   return decisionFor(row, "short")?.profile || {
     type: row.classification?.isETF ? "etf" : "stock", isETF: Boolean(row.classification?.isETF),
     primaryClassification: row.classification?.primaryClassification || null,
+    businessTrait: row.classification?.businessTrait || null, riskTrait: row.classification?.riskTrait || null,
     companyTraits: row.classification?.companyTraits || [], lifecycle: row.classification?.lifecycle || null,
     profileConfidence: row.classification?.profileConfidence ?? null, lastProfileReview: row.classification?.lastProfileReview || null,
     appliedModifiers: [], effectiveModifiers: {},
@@ -596,7 +606,56 @@ function renderMarketRiskRegime(row) {
 
 function modifierDescription(tag) {
   const descriptions = {
-    MegaCap: { en: "Lower fast-noise sensitivity; market sensitivity reduced.", zh: "降低短周期噪声敏感度，并降低市场敏感度。" }, HighGrowth: { en: "Momentum and Relative Strength sensitivity increased.", zh: "提高动量与相对强弱的敏感度。" }, HighBeta: { en: "Normal volatility tolerance and market-shock sensitivity increased.", zh: "提高正常波动容忍度与市场冲击敏感度。" }, HighVolatility: { en: "Normal volatility tolerance and market-shock sensitivity increased.", zh: "提高正常波动容忍度与市场冲击敏感度。" }, MarketLeader: { en: "Trend persistence matters more; Strong Buy needs better price opportunity.", zh: "趋势延续性更重要，强力买入需要更好的价格机会。" }, EstablishedLeader: { en: "Trend persistence matters more; Strong Buy needs better price opportunity.", zh: "趋势延续性更重要，强力买入需要更好的价格机会。" }, CrowdedLeader: { en: "Bullish-exhaustion sensitivity increased.", zh: "提高多头衰竭敏感度。" }, Cyclical: { en: "Participation, Relative Strength inflection, and contrarian exhaustion matter more.", zh: "更重视参与度、相对强弱拐点与反向衰竭。" }, MemoryStorage: { en: "Participation, Relative Strength inflection, and contrarian exhaustion matter more.", zh: "更重视参与度、相对强弱拐点与反向衰竭。" }, InterestRateSensitive: { en: "US 10Y sensitivity increased.", zh: "提高对美国 10 年期利率的敏感度。" }, REIT: { en: "US 10Y sensitivity increased.", zh: "提高对美国 10 年期利率的敏感度。" }, CashCow: { en: "Ordinary pullback tolerance and long-horizon stability increased.", zh: "提高普通回撤容忍度与长期决策稳定性。" }, RegulatoryRisk: { en: "Event and market-shock sensitivity increased.", zh: "提高事件与市场冲击敏感度。" },
+    Semiconductors: { en: "Relative Strength and participation matter more; normal volatility tolerance is moderately higher.", zh: "更重视相对强弱与参与度，并适度提高正常波动容忍度。" },
+    "Semiconductor Equipment": { en: "Participation and economic-cycle confirmation carry more weight.", zh: "更重视参与度与经济周期确认。" },
+    "Enterprise Software": { en: "Trend structure and Relative Strength receive more emphasis.", zh: "更重视趋势结构与相对强弱。" },
+    "Cloud Infrastructure": { en: "Trend, Relative Strength, and participation receive more emphasis.", zh: "更重视趋势、相对强弱与参与度。" },
+    "Consumer Technology": { en: "Relative Strength and growth-market context receive modestly more emphasis.", zh: "适度提高相对强弱与成长市场背景的重要性。" },
+    "Internet Platforms": { en: "Relative Strength is emphasized and event sensitivity is modestly higher.", zh: "更重视相对强弱，并适度提高事件敏感度。" },
+    "E-Commerce": { en: "Participation and consumer/macro context receive more emphasis.", zh: "更重视参与度以及消费／宏观环境。" },
+    "Digital Advertising": { en: "Participation and advertising-cycle context receive more emphasis.", zh: "更重视参与度与广告周期背景。" },
+    "Telecommunications Infrastructure": { en: "Trend structure and order-cycle context receive more emphasis.", zh: "更重视趋势结构与订单周期背景。" },
+    "Capital Markets": { en: "Market-regime and financial-conditions sensitivity are higher.", zh: "提高市场环境与金融条件敏感度。" },
+    Banking: { en: "Rate and macro relevance are higher; rate direction remains contextual.", zh: "提高利率与宏观相关性；利率方向仍按实际环境解释。" },
+    "Digital Financial Services": { en: "Trend and financial-conditions sensitivity are moderately higher.", zh: "适度提高趋势与金融条件敏感度。" },
+    Payments: { en: "Stable trend structure and consumer/macro context receive modest emphasis.", zh: "适度重视稳定趋势结构与消费／宏观环境。" },
+    Insurance: { en: "Rate relevance and long-horizon stability are moderately higher.", zh: "适度提高利率相关性与长期稳定性。" },
+    "Managed Care & Health Services": { en: "Broad-market sensitivity is lower while event sensitivity and stability increase.", zh: "降低广义市场敏感度，同时提高事件敏感度与稳定性。" },
+    Pharmaceuticals: { en: "Event uncertainty requires stronger execution confirmation.", zh: "事件不确定性要求更强的执行确认。" },
+    Biotechnology: { en: "Event risk and execution requirements are materially higher.", zh: "显著提高事件风险与执行要求。" },
+    "Medical Devices": { en: "Defensive market context and regulatory-event sensitivity are moderated.", zh: "适度采用防御性市场解读与监管事件敏感度。" },
+    "Consumer Discretionary": { en: "Consumer/risk-on context and participation carry more weight.", zh: "更重视消费／风险偏好环境与参与度。" },
+    "Consumer Staples": { en: "Broad-market sensitivity is lower and long-horizon stability is higher.", zh: "降低广义市场敏感度并提高长期稳定性。" },
+    Retail: { en: "Consumer/macro context and volume participation receive more emphasis.", zh: "更重视消费／宏观环境与成交参与度。" },
+    Industrials: { en: "MA trend structure and economic-cycle context receive more emphasis.", zh: "更重视均线趋势结构与经济周期背景。" },
+    "Aerospace & Defense": { en: "Long-trend stability and event sensitivity are modestly higher.", zh: "适度提高长期趋势稳定性与事件敏感度。" },
+    "Transportation & Logistics": { en: "Economic-cycle context and demand participation receive more emphasis.", zh: "更重视经济周期背景与需求参与度。" },
+    Energy: { en: "Macro/commodity context and participation receive more emphasis.", zh: "更重视宏观／商品环境与参与度。" },
+    Utilities: { en: "Rate relevance and long-horizon stability are materially higher.", zh: "显著提高利率相关性与长期稳定性。" },
+    "Real Estate": { en: "Rate relevance is materially higher with an income/stability interpretation.", zh: "显著提高利率相关性，并采用收益／稳定性解读。" },
+    Materials: { en: "Commodity/global-cycle context and participation receive more emphasis.", zh: "更重视商品／全球周期环境与参与度。" },
+    MegaCap: { en: "Fast-noise sensitivity and broad-market sensitivity are modestly lower.", zh: "适度降低短期噪声与广义市场敏感度。" },
+    MarketLeader: { en: "Trend persistence and Relative Strength matter more.", zh: "更重视趋势延续性与相对强弱。" },
+    HighGrowth: { en: "Trend/Relative Strength importance and confirmation requirements increase.", zh: "提高趋势／相对强弱的重要性与确认要求。" },
+    MatureGrowth: { en: "Trend reliability and long-horizon stability increase modestly.", zh: "适度提高趋势可靠性与长期稳定性。" },
+    CashCow: { en: "Risk and broad market/rate sensitivity are lower; stability is higher.", zh: "降低风险及广义市场／利率敏感度，并提高稳定性。" },
+    Defensive: { en: "Broad-market sensitivity is lower and breakout execution is stricter.", zh: "降低广义市场敏感度，并收紧突破执行条件。" },
+    Cyclical: { en: "Participation confirmation and macro sensitivity are higher.", zh: "提高参与度确认与宏观敏感度。" },
+    Turnaround: { en: "Bullish execution requires materially stronger confirmation.", zh: "多头执行需要显著更强的确认。" },
+    HighVolatility: { en: "Normal ATR and exhaustion tolerance are higher; entry confirmation is modestly stricter.", zh: "提高正常 ATR 与衰竭容忍度，并适度收紧介入确认。" },
+    RegulatoryRisk: { en: "Event sensitivity and execution requirements increase.", zh: "提高事件敏感度与执行要求。" },
+    InterestRateSensitive: { en: "US 10Y/rate-regime relevance increases without a fixed rate direction.", zh: "提高美国 10 年期／利率环境相关性，不预设固定利率方向。" },
+    CommoditySensitive: { en: "Macro/commodity context and confirmation requirements increase.", zh: "提高宏观／商品环境相关性与确认要求。" },
+    MacroSensitive: { en: "Broad market/VIX sensitivity and confirmation requirements increase.", zh: "提高广义市场／VIX 敏感度与确认要求。" },
+    CrowdedLeader: { en: "Bullish-exhaustion and failed-breakout sensitivity increase.", zh: "提高多头衰竭与失败突破敏感度。" },
+    ExecutionRisk: { en: "Risk, event sensitivity, and execution confirmation increase.", zh: "提高风险、事件敏感度与执行确认。" },
+    LowVolatility: { en: "Unusual volatility expansion receives more attention and stability increases.", zh: "更重视异常波动扩张，并提高稳定性。" },
+    Emerging: { en: "Confirmation and execution requirements increase; stability is lower.", zh: "提高确认与执行要求，并降低稳定性。" },
+    Scaling: { en: "Trend and Relative Strength matter more with moderate volatility tolerance.", zh: "更重视趋势与相对强弱，并适度提高波动容忍度。" },
+    EstablishedLeader: { en: "MA/trend persistence and Relative Strength usefulness increase.", zh: "提高均线／趋势延续性与相对强弱的参考价值。" },
+    MatureLeader: { en: "Long-horizon stability is higher and momentum chasing is reduced.", zh: "提高长期稳定性，并降低追逐动量的倾向。" },
+    Recovery: { en: "Participation and structure-repair confirmation are more important.", zh: "更重视参与度与结构修复确认。" },
+    Declining: { en: "Breakdown risk is higher and positive execution needs stronger evidence.", zh: "提高破位风险，多头执行需要更强证据。" },
   };
   const etfDescriptions = {
     LeveragedETF: { en: "Raises volatility, exhaustion, and market-shock sensitivity; formal action gates are stricter.", zh: "提高波动、衰竭和市场冲击敏感度，并收紧正式操作门槛。" },
@@ -612,7 +671,9 @@ function renderCompanyModel(row) {
   const confidence = Number.isFinite(profile.profileConfidence) ? `${Math.round(profile.profileConfidence * 100)}%` : "";
   const contents = profile.isETF
     ? `<div class="company-model-grid"><div class="profile-tag-group"><span>${t("etfProfile")}</span><div class="profile-fact-row"><b>${t("leveraged")}</b><span>${profile.leveraged ? t("yes") : t("no")}</span><b>${t("direction")}</b><span>${profile.direction === "inverse" ? t("inverseDirection") : t("longDirection")}</span>${profile.underlying ? `<b>${t("underlying")}</b><span>${escapeHtml(profile.underlying)}</span>` : ""}</div></div></div>`
-    : `<div class="company-model-grid">${profile.primaryClassification ? `<div class="profile-tag-group"><span>${t("primaryClassification")}</span><div><b>${escapeHtml(profile.primaryClassification)}</b></div></div>` : ""}${groups.visible?.traits ? `<div class="profile-tag-group"><span>${t("companyTraits")}</span><div>${tagPills(groups.traits)}</div></div>` : ""}${groups.visible?.lifecycle ? `<div class="profile-tag-group"><span>${t("lifecycle")}</span><div>${tagPills([groups.lifecycle])}</div></div>` : ""}${profile.lastProfileReview || confidence ? `<div class="profile-tag-group"><span>${t("lastReview")}</span><div class="profile-fact-row">${profile.lastProfileReview ? `<span>${formatDate(profile.lastProfileReview)}</span>` : ""}${confidence ? `<b>${t("profileConfidence")}</b><span>${confidence}</span>` : ""}</div></div>` : ""}</div>`;
+    : profile.primaryClassification || groups.visible?.traits || groups.visible?.lifecycle
+      ? `<div class="company-model-grid">${profile.primaryClassification ? `<div class="profile-tag-group"><span>${t("primaryClassification")}</span><div><b>${escapeHtml(profile.primaryClassification)}</b></div></div>` : ""}${groups.visible?.businessTrait ? `<div class="profile-tag-group"><span>${t("businessTrait")}</span><div>${tagPills([groups.businessTrait])}</div></div>` : ""}${groups.visible?.riskTrait ? `<div class="profile-tag-group"><span>${t("riskTrait")}</span><div>${tagPills([groups.riskTrait])}</div></div>` : ""}${groups.visible?.lifecycle ? `<div class="profile-tag-group"><span>${t("lifecycle")}</span><div>${tagPills([groups.lifecycle])}</div></div>` : ""}${profile.lastProfileReview || confidence ? `<div class="profile-tag-group"><span>${t("lastReview")}</span><div class="profile-fact-row">${profile.lastProfileReview ? `<span>${formatDate(profile.lastProfileReview)}</span>` : ""}${confidence ? `<b>${t("profileConfidence")}</b><span>${confidence}</span>` : ""}</div></div>` : ""}</div>`
+      : `<p class="decision-no-data">${t("profileNotClassified")}</p>`;
   return `<section class="detail-section-card"><div class="detail-section-head"><h3>${profile.isETF ? t("etfProfile") : t("companyModel")}</h3></div>${contents}${applied.length ? `<div class="modifier-list"><div class="decision-list-title">${t("appliedModifiers")}</div><ul>${applied.join("")}</ul></div>` : ""}</section>`;
 }
 

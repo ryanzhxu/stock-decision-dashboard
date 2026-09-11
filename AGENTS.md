@@ -9,7 +9,7 @@ This is a lightweight stock decision dashboard. It displays a shared watchlist, 
 - `server.py` fetches, normalizes, caches, and serves market, quote, earnings, and independent page data.
 - `main.js` owns application state, data integration, and DOM rendering. It must never calculate a recommendation.
 - `technical-features.js` produces the canonical technical feature object used by both the Technical tab and the Decision Engine.
-- `profile-definitions.js` is the reviewable source of stock classifications, Company Traits, and ETF profiles.
+- `decision-engine/company-profile-classifier.js` is the deterministic, metadata-only Company Profile V2 classifier. `profile-definitions.js` validates its canonical stock slots and holds the separate ETF definitions.
 - `decision-engine/` contains the calibrated V1 recommendation model. `etf-profile.js` supplies ETF-specific behavior modifiers.
 - `decision-presentation.js` is a pure UI helper for execution labels, reason translation, and the native DOM/CSS Price Landscape model.
 - `scripts/` contains bounded, read-only audit/shadow tooling, not production history storage.
@@ -208,15 +208,22 @@ Every horizon Fibonacci object has independent derivation/source identifiers. Eq
 
 ## Profiles
 
-Individual stocks use exactly three profile layers:
+Ordinary stocks use exactly four optional canonical slots, in this order:
 
-- Primary Classification
-- Company Traits (business plus size/style/behavior traits)
-- Lifecycle
+1. `primaryClassification` — exactly one of: Semiconductors, Semiconductor Equipment, Enterprise Software, Cloud Infrastructure, Consumer Technology, Internet Platforms, E-Commerce, Digital Advertising, Telecommunications Infrastructure, Capital Markets, Banking, Digital Financial Services, Payments, Insurance, Managed Care & Health Services, Pharmaceuticals, Biotechnology, Medical Devices, Consumer Discretionary, Consumer Staples, Retail, Industrials, Aerospace & Defense, Transportation & Logistics, Energy, Utilities, Real Estate, or Materials.
+2. `businessTrait` — exactly one of: MegaCap, MarketLeader, HighGrowth, MatureGrowth, CashCow, Defensive, Cyclical, or Turnaround.
+3. `riskTrait` — exactly one of: HighVolatility, RegulatoryRisk, InterestRateSensitive, CommoditySensitive, MacroSensitive, CrowdedLeader, ExecutionRisk, or LowVolatility.
+4. `lifecycle` — exactly one of: Emerging, Scaling, EstablishedLeader, MatureLeader, Recovery, or Declining.
 
-Every individual stock must have a Primary Classification and at least three Company Traits. Profiles are reviewed annually, not changed on every refresh and not forced to change when reviewed. A profile update must alter the modifiers used by the engine, not merely the UI.
+`companyTraits` is only the compatibility/display array `[businessTrait, riskTrait].filter(Boolean)`. It is never a free-form tag list. Missing evidence remains `null`, gives no modifier, and produces `incomplete` or `unavailable` profile status; never guess a generic category, HighGrowth, HighVolatility, CashCow, or EstablishedLeader.
 
-ETFs do not receive Company Traits or a Lifecycle. ETF profile fields are `isETF`, `leveraged`, `direction` (`long` or `inverse`), `underlying`, and optional `underlyingTicker`. Ordinary long ETFs reuse the V1 technical/market model. Leveraged ETFs use stricter gates and higher risk, exhaustion, and market sensitivity. Inverse ETFs use inverted underlying direction only as bounded confirmation; their own Technical states remain the Direction source.
+The server creates stock profiles automatically from compact existing provider metadata (industry, sector, business summary, market cap, growth, margin, and beta where present). The production classifier must not inspect ticker symbols or use a manual ordinary-stock ticker map. It stores compact current profiles in the persistent `company_profiles` table inside `watchlist.db`; Dashboard restart must not change their source of truth. Complete profiles do not change on normal hourly refreshes. Incomplete profiles may fill a null slot, but never overwrite a populated slot outside the annual review.
+
+The only annual review date is **March 31, `America/New_York`**. A review does not force a change and sparse review metadata must never erase an established value. A valid review persists the date/provenance; it must also update the modifiers actually used by the engine. `profileConfidence` and its existing Final Confidence contribution are intentionally unchanged in V2.
+
+All four slots use conservative, centralized, aggregate-then-cap modifiers for Direction/Confirmation weights, risk and exhaustion tolerance, market/rate/event sensitivity, execution gates, benchmark emphasis, and stability. They contextualize existing signals; they never add action points, override Price State → Action Family, or create a second recommendation engine. General caps remain 0.85–1.15; justified special sensitivity caps remain 0.80–1.20.
+
+ETFs remain isolated. They never receive stock profile slots, Company Traits, or a Lifecycle. ETF profile fields are `isETF`, `leveraged`, `direction` (`long` or `inverse`), `underlying`, and optional `underlyingTicker`. Ordinary long ETFs reuse the V1 technical/market model. Leveraged ETFs use stricter gates and higher risk, exhaustion, and market sensitivity. Inverse ETFs use inverted underlying direction only as bounded confirmation; their own Technical states remain the Direction source.
 
 ## Stability and performance
 
@@ -240,6 +247,8 @@ every decision must be correct after a restart even without either cache.
 - Delete dead legacy code rather than wrapping it for compatibility.
 - Every changed Decision behavior needs targeted tests.
 - Never add ticker-specific recommendation hardcodes.
+- Never add ticker-specific ordinary-stock profile definitions; preserve the ETF map as the separate ETF architecture.
+- Keep Company Profile V2 evidence compact and metadata-only. It must never use a short-term price move, RSI, MACD, or current recommendation to define company identity.
 
 ## Common mistakes to avoid
 
@@ -269,6 +278,10 @@ every decision must be correct after a restart even without either cache.
 - using Daily-only Fibonacci for Short without an explicit fallback reason
 - sharing a Fibonacci object across horizons, or forcing different anchors merely to make horizons look different
 - ETF using fake company traits
+- free-form, provider-sector, or legacy tags as Company Traits (`Technology`, `Equity`, `DiversifiedBusiness`, `UnreviewedProfile`)
+- generic `EstablishedLeader` or a business/risk trait without direct metadata evidence
+- rolling 365-day Company Profile reviews, profiles that churn hourly, or annual sparse data erasing valid profile fields
+- applying a Company Profile modifier outside the centralized bounded V2 matrix
 - inverse ETF ignoring its underlying
 - leveraged ETF using identical risk rules as a 1x ETF
 - rendering Hold as Buy or Avoid as Sell
@@ -279,6 +292,7 @@ Run from the repository root:
 
 ```bash
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/decision-engine.test.js
+/Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/company-profile.test.js
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/technical-features.test.js
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/dashboard-regression.test.js
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/decision-ui.test.js
@@ -286,11 +300,12 @@ Run from the repository root:
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node scripts/decision-audit.js
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node scripts/decision-shadow.js
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node scripts/fibonacci-audit.js
-/Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node scripts/refresh-memory-audit.js
+/Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --expose-gc scripts/refresh-memory-audit.js
+/Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node scripts/company-profile-audit.js
 /private/tmp/stock-dashboard-test-venv/bin/python3 -m unittest discover -s tests -p 'eod_history_test.py'
 /Users/vincentwang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/eod-history-node.test.js
 ```
 
-`decision-engine.test.js` includes joint price/action consistency, stateless-refresh, category-aware confluence, annual-review, ETF, and coverage checks. `technical-features.test.js` protects canonical data completeness and independent Fibonacci provenance. `dashboard-regression.test.js` protects data/UI regressions. `decision-audit.js`, `decision-shadow.js`, `fibonacci-audit.js`, and `refresh-memory-audit.js` are bounded cache-only audits.
+`decision-engine.test.js` includes joint price/action consistency, stateless-refresh, category-aware confluence, annual-review, ETF, and coverage checks. `company-profile.test.js` protects V2 vocabularies, metadata-only/ticker-independent classification, modifier caps, annual-review boundaries, and ETF isolation. `technical-features.test.js` protects canonical data completeness and independent Fibonacci provenance. `dashboard-regression.test.js` protects data/UI regressions. `decision-audit.js`, `decision-shadow.js`, `fibonacci-audit.js`, `refresh-memory-audit.js`, and `company-profile-audit.js` are bounded cache-only audits.
 `eod_history_test.py` and `eod-history-node.test.js` protect the independent
 SQLite scheduler/write path and compact production-engine snapshot serializer.

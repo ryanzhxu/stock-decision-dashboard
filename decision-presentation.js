@@ -74,10 +74,16 @@
   }
 
   function profileGroups(profile = {}) {
-    if (profile.isETF) return { type: "etf", traits: [], lifecycle: null, visible: { traits: false, lifecycle: false } };
-    const primary = String(profile.primaryClassification || "").toLowerCase();
-    const traits = [...new Set((profile.companyTraits || []).filter(Boolean))].filter((trait) => String(trait).toLowerCase() !== primary);
-    return { type: "stock", traits, lifecycle: profile.lifecycle || null, visible: { traits: traits.length > 0, lifecycle: Boolean(profile.lifecycle) } };
+    if (profile.isETF) return { type: "etf", businessTrait: null, riskTrait: null, traits: [], lifecycle: null, visible: { traits: false, businessTrait: false, riskTrait: false, lifecycle: false } };
+    // V2 renders exactly the two canonical trait slots.  It intentionally
+    // does not revive arbitrary historical tag arrays in presentation.
+    const businessTrait = profile.businessTrait || null;
+    const riskTrait = profile.riskTrait || null;
+    const traits = [businessTrait, riskTrait].filter(Boolean);
+    return {
+      type: "stock", businessTrait, riskTrait, traits, lifecycle: profile.lifecycle || null,
+      visible: { traits: traits.length > 0, businessTrait: Boolean(businessTrait), riskTrait: Boolean(riskTrait), lifecycle: Boolean(profile.lifecycle) },
+    };
   }
 
   const labelAnchor = (point) => Number.isFinite(point.start) && Number.isFinite(point.end) ? (point.start + point.end) / 2 : point.position;

@@ -65,13 +65,23 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "eod-history-node-"));
 try {
   const qqq = quote("QQQ", 300);
   const tqqq = quote("TQQQ", 100);
+  const stock = quote("STOCK", 180);
+  stock.metadata = {
+    quoteType: "EQUITY", industry: "Semiconductors", marketCap: 2_400_000_000_000,
+    revenueGrowth: 0.28, profitMargins: 0.42, beta: 1.62,
+    classification: {
+      primaryClassification: "Semiconductors", businessTrait: "MegaCap", riskTrait: "HighVolatility",
+      lifecycle: "Scaling", companyTraits: ["MegaCap", "HighVolatility"], profileStatus: "complete",
+      profileSource: "automatic", profileConfidence: 0.82, lastProfileReview: "2026-03-31T03:30:00-04:00",
+    },
+  };
   const unavailable = { ticker: "NOPE", price: null, quote_status: "unavailable", history: { timestamps: [], closes: [], availability: "unavailable" }, metadata: { quoteType: "EQUITY" } };
   const stale = quote("STALE", 80);
   stale.history.timestamps[stale.history.timestamps.length - 1] = "2026-08-17";
   const input = {
     marketDate: "2026-08-18", recordedAtEt: "2026-08-18T16:30:00-04:00",
     payload: {
-      items: [{ ticker: "QQQ", analysis: qqq }, { ticker: "TQQQ", analysis: tqqq }, { ticker: "NOPE", analysis: unavailable }, { ticker: "STALE", analysis: stale }],
+      items: [{ ticker: "QQQ", analysis: qqq }, { ticker: "TQQQ", analysis: tqqq }, { ticker: "STOCK", analysis: stock }, { ticker: "NOPE", analysis: unavailable }, { ticker: "STALE", analysis: stale }],
       marketContext: { market_context: { regime: "normal", equity_trend: { spy: { change_20d_pct: 1.5 }, qqq: { change_20d_pct: 2.1 } }, vix: { current: 18 } } },
     },
   };
@@ -81,17 +91,25 @@ try {
   const run = spawnSync(process.execPath, [runner, inputPath, outputPath], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr || run.stdout);
   const output = JSON.parse(fs.readFileSync(outputPath, "utf8"));
-  assert.equal(output.records.length, 12, "every ticker must produce all three horizons");
+  assert.equal(output.records.length, 15, "every ticker must produce all three horizons");
   const qqqShort = output.records.find((row) => row.ticker === "QQQ" && row.horizon === "short");
   const tqqqLong = output.records.find((row) => row.ticker === "TQQQ" && row.horizon === "long");
   const nopeMid = output.records.find((row) => row.ticker === "NOPE" && row.horizon === "mid");
   const staleLong = output.records.find((row) => row.ticker === "STALE" && row.horizon === "long");
+  const stockShort = output.records.find((row) => row.ticker === "STOCK" && row.horizon === "short");
   assert.equal(qqqShort.asset_type, "ETF");
   assert.equal(tqqqLong.leveraged, true);
   assert.equal(tqqqLong.etf_direction, "long");
   assert.equal(nopeMid.data_status, "unavailable");
   assert.equal(nopeMid.action, null);
   assert.equal(staleLong.data_status, "unavailable", "prior-day cache must not become a current EOD recommendation");
+  assert.equal(stockShort.primary_classification, "Semiconductors");
+  assert.deepEqual(stockShort.company_traits, ["MegaCap", "HighVolatility"]);
+  assert.equal(stockShort.business_trait, "MegaCap");
+  assert.equal(stockShort.risk_trait, "HighVolatility");
+  assert.equal(stockShort.profile_status, "complete");
+  assert.equal(stockShort.profile_source, "automatic");
+  assert.equal(stockShort.applied_profile_modifiers.profile_confidence, 0.82);
   assert.ok(qqqShort.technical_features, "available record includes compact canonical features");
   assert.equal(hasRawSeries(qqqShort.technical_features), false, "raw OHLCV and indicator series must never be persisted");
   assert.ok(Array.isArray(qqqShort.supporting_reasons));

@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
+require(path.join(ROOT, "decision-engine", "company-profile-classifier.js"));
 const { buildTechnicalFeatures } = require(path.join(ROOT, "technical-features.js"));
 const profiles = require(path.join(ROOT, "profile-definitions.js"));
 
@@ -139,11 +140,19 @@ function profileContext(classification, horizonProfile) {
     primary_classification: isETF ? null : (profile.primaryClassification || classification?.primaryClassification || null),
     lifecycle: isETF ? null : (profile.lifecycle || classification?.lifecycle || null),
     company_traits: isETF ? null : (profile.companyTraits || classification?.companyTraits || []),
+    business_trait: isETF ? null : (profile.businessTrait || classification?.businessTrait || null),
+    risk_trait: isETF ? null : (profile.riskTrait || classification?.riskTrait || null),
+    profile_status: isETF ? null : (profile.profileStatus || classification?.profileStatus || null),
+    profile_source: isETF ? null : (profile.profileSource || classification?.profileSource || null),
     applied_profile_modifiers: isETF ? null : {
       applied: profile.appliedModifiers || [],
       effective: profile.effectiveModifiers || {},
       profile_confidence: profile.profileConfidence ?? classification?.profileConfidence ?? null,
       last_profile_review: profile.lastProfileReview || classification?.lastProfileReview || null,
+      business_trait: profile.businessTrait || classification?.businessTrait || null,
+      risk_trait: profile.riskTrait || classification?.riskTrait || null,
+      profile_status: profile.profileStatus || classification?.profileStatus || null,
+      profile_source: profile.profileSource || classification?.profileSource || null,
     },
     leveraged: isETF ? Boolean(profile.leveraged ?? classification?.leveraged) : null,
     etf_direction: isETF ? (profile.direction || classification?.direction || null) : null,

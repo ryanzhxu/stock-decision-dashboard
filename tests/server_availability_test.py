@@ -1,5 +1,10 @@
+import os
+import tempfile
 import unittest
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -305,6 +310,107 @@ class ServerAvailabilityTests(unittest.TestCase):
             self.assertEqual(float(frame.iloc[0]["Close"]), 10.5)
         finally:
             server.fetch_stooq_history_rows = original
+
+
+class CompanyProfilePersistenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="company-profile-store-")
+        self.db_path = str(Path(self.temp.name) / "watchlist.db")
+        self.path_patch = patch.object(server, "WATCHLIST_DB_PATH", self.db_path)
+        self.path_patch.start()
+
+    def tearDown(self):
+        self.path_patch.stop()
+        self.temp.cleanup()
+
+    @staticmethod
+    def stock_quote(metadata=None):
+        return {"metadata": {"quoteType": "EQUITY", **(metadata or {})}}
+
+    @staticmethod
+    def complete_profile(primary="Semiconductors", business="MegaCap", risk="HighVolatility", lifecycle="Scaling"):
+        return {
+            "primaryClassification": primary, "businessTrait": business,
+            "riskTrait": risk, "lifecycle": lifecycle,
+            "companyTraits": [business, risk], "profileStatus": "complete",
+            "profileSource": "automatic", "profileEvidence": {"primaryClassification": ["industry:test"]},
+        }
+
+    def test_profile_store_persists_and_complete_profile_does_not_churn_hourly(self):
+        quotes = {"NEW": self.stock_quote({"industry": "Semiconductors", "marketCap": 300_000_000_000})}
+        with patch.object(server, "_classify_company_profiles", return_value={"NEW": self.complete_profile()} ) as classify:
+            first = server.ensure_company_profiles_for_quotes(quotes, now=datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("America/New_York")))
+            self.assertEqual(first["NEW"]["primaryClassification"], "Semiconductors")
+            self.assertEqual(first["NEW"]["companyTraits"], ["MegaCap", "HighVolatility"])
+            self.assertEqual(first["NEW"]["profileConfidence"], 0.82)
+            # Simulate an in-memory restart by reading the SQLite source anew.
+            persisted = server.load_company_profiles(["NEW"])
+            self.assertEqual(persisted["NEW"]["lifecycle"], "Scaling")
+            changed_metadata = {"NEW": self.stock_quote({"industry": "Banking", "marketCap": 1})}
+            second = server.ensure_company_profiles_for_quotes(changed_metadata, now=datetime(2026, 9, 11, 12, tzinfo=ZoneInfo("America/New_York")))
+            self.assertEqual(second["NEW"]["primaryClassification"], "Semiconductors")
+            self.assertEqual(classify.call_count, 1, "a complete profile is not reclassified by normal hourly refresh")
+
+    def test_incomplete_profile_fills_null_without_overwriting_existing_field(self):
+        existing = {
+            "primaryClassification": "Enterprise Software", "businessTrait": None,
+            "riskTrait": None, "lifecycle": None, "profileEvidence": {"primaryClassification": ["industry:software"]},
+            "profileConfidence": 0.82, "lastProfileReview": "2026-09-10T12:00:00-04:00",
+        }
+        classified = self.complete_profile(primary="Banking", business="HighGrowth", risk="HighVolatility", lifecycle="Scaling")
+        merged = server._merged_profile(existing, classified, "2026-09-11T12:00:00-04:00", allow_replace=False)
+        self.assertEqual(merged["primaryClassification"], "Enterprise Software")
+        self.assertEqual(merged["businessTrait"], "HighGrowth")
+        self.assertEqual(merged["riskTrait"], "HighVolatility")
+        self.assertEqual(merged["lifecycle"], "Scaling")
+        self.assertEqual(merged["profileConfidence"], 0.82)
+
+    def test_incomplete_hourly_reclassification_without_new_evidence_does_not_rewrite_store(self):
+        quotes = {"PART": self.stock_quote({"industry": "Software - Application"})}
+        incomplete = {
+            "primaryClassification": "Enterprise Software", "businessTrait": None,
+            "riskTrait": None, "lifecycle": None, "companyTraits": [],
+            "profileStatus": "incomplete", "profileSource": "automatic",
+            "profileEvidence": {"primaryClassification": ["industry:software"]},
+        }
+        with patch.object(server, "_classify_company_profiles", return_value={"PART": incomplete}):
+            server.ensure_company_profiles_for_quotes(
+                quotes, now=datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("America/New_York")),
+            )
+            first = server.load_company_profiles(["PART"])["PART"]
+            server.ensure_company_profiles_for_quotes(
+                quotes, now=datetime(2026, 9, 10, 13, tzinfo=ZoneInfo("America/New_York")),
+            )
+            second = server.load_company_profiles(["PART"])["PART"]
+        self.assertEqual(first["lastProfileReview"], second["lastProfileReview"])
+
+    def test_annual_review_is_march_31_et_and_insufficient_evidence_keeps_valid_profile(self):
+        last_review = "2026-09-10T12:00:00-04:00"
+        before = datetime(2027, 3, 30, 12, tzinfo=ZoneInfo("America/New_York"))
+        on_date = datetime(2027, 3, 31, 12, tzinfo=ZoneInfo("America/New_York"))
+        self.assertFalse(server._profile_review_due(last_review, before))
+        self.assertTrue(server._profile_review_due(last_review, on_date))
+        self.assertEqual(server.next_company_profile_review(datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("America/New_York"))).date().isoformat(), "2027-03-31")
+        self.assertEqual(server.next_company_profile_review(datetime(2027, 4, 10, 12, tzinfo=ZoneInfo("America/New_York"))).date().isoformat(), "2028-03-31")
+        original = self.complete_profile()
+        sparse = {"profileEvidence": {}}
+        merged = server._merged_profile(original, sparse, "2027-03-31T12:00:00-04:00", allow_replace=True)
+        self.assertEqual(merged["primaryClassification"], "Semiconductors")
+        self.assertEqual(merged["businessTrait"], "MegaCap")
+        self.assertEqual(merged["riskTrait"], "HighVolatility")
+        self.assertEqual(merged["lifecycle"], "Scaling")
+
+    def test_etf_skips_stock_classifier_and_annual_review_uses_force_path(self):
+        etf = {"QQQ": {"metadata": {"quoteType": "ETF", "industry": "Exchange Traded Fund"}}}
+        with patch.object(server, "_classify_company_profiles") as classify:
+            self.assertEqual(server.ensure_company_profiles_for_quotes(etf), {})
+            classify.assert_not_called()
+        payload = {"quotes": {"NEW": self.stock_quote({"industry": "Semiconductors"})}}
+        summary = {"completed": True}
+        with patch.object(server, "_refresh_market_cache_for_watchlist", return_value=summary), patch.object(server, "load_shared_watchlist", return_value=["NEW"]), patch.object(server, "build_market_data_payload", return_value=payload), patch.object(server, "ensure_company_profiles_for_quotes") as ensure:
+            outcome = server.run_company_profile_annual_review_once(datetime(2027, 3, 31, 12, tzinfo=ZoneInfo("America/New_York")), reason="test")
+        self.assertEqual(outcome["status"], "success")
+        ensure.assert_called_once_with(payload["quotes"], force_review=True, now=datetime(2027, 3, 31, 12, tzinfo=ZoneInfo("America/New_York")))
 
 
 if __name__ == "__main__":

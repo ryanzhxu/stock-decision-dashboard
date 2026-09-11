@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
+require(path.join(__dirname, "..", "decision-engine", "company-profile-classifier.js"));
 for (const file of [
   "config.js", "technical-engine.js", "exhaustion-engine.js", "market-engine.js", "etf-profile.js", "company-profile.js",
   "execution-engine.js", "confidence-engine.js", "stability-engine.js", "decision-engine.js",
@@ -8,7 +9,6 @@ for (const file of [
 
 const engine = globalThis.DecisionEngine;
 const profiles = require("../profile-definitions.js");
-const watchlist = require("../watchlist.shared.json").watchlist;
 const unavailable = { availability: "unavailable" };
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -204,18 +204,18 @@ const missing = decide(missingFeatures, market(), "QUALITY_B");
 assert(missing.horizons.short.debug.dataQuality.score < complete.horizons.short.debug.dataQuality.score);
 assert(missing.horizons.short.confidence < complete.horizons.short.confidence);
 
-// 17. Trait aggregation stays bounded; profile review is annual and changes
-// the modifier pipeline only after the next eligible review.
-const profile = engine.profile.build({ primaryClassification: "Test", companyTraits: ["HighGrowth", "HighBeta", "HighVolatility", "CrowdedLeader", "CashCow", "MarketLeader"], lifecycle: "EstablishedLeader" }, "CAP");
+// 17. The four-slot profile layer stays bounded; March 31 ET is the shared
+// review date and only an eligible review may change populated slots.
+const profile = engine.profile.build({ primaryClassification: "Semiconductors", businessTrait: "HighGrowth", riskTrait: "HighVolatility", lifecycle: "Scaling" }, "CAP");
 assert(profile.effectiveModifiers.riskSensitivity <= 1.15 && profile.effectiveModifiers.riskSensitivity >= 0.85);
 assert(profile.effectiveModifiers.marketSensitivity <= 1.2 && profile.effectiveModifiers.marketSensitivity >= 0.8);
 engine.profile.clearReviews();
-const firstReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", companyTraits: ["Cloud", "HighGrowth", "LargeCap"], lifecycle: "Scaling", profileConfidence: 0.8 }, now: new Date("2025-01-01T00:00:00Z") });
-const earlyReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", companyTraits: ["Cloud", "CashCow", "LargeCap"], lifecycle: "MatureLeader" }, now: new Date("2025-05-01T00:00:00Z") });
-const annualReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", companyTraits: ["Cloud", "CashCow", "LargeCap"], lifecycle: "MatureLeader", profileConfidence: 0.86 }, now: new Date("2026-01-02T00:00:00Z") });
-assert.deepEqual(earlyReview.companyTraits, firstReview.companyTraits, "profile cannot churn before annual review");
+const firstReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", businessTrait: "HighGrowth", riskTrait: "HighVolatility", lifecycle: "Scaling", profileConfidence: 0.8 }, now: new Date("2025-04-01T16:00:00Z") });
+const earlyReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", businessTrait: "CashCow", riskTrait: "LowVolatility", lifecycle: "MatureLeader" }, now: new Date("2026-03-30T16:00:00Z") });
+const annualReview = engine.profile.review({ ticker: "REVIEW", profile: { primaryClassification: "Enterprise Software", businessTrait: "CashCow", riskTrait: "LowVolatility", lifecycle: "MatureLeader", profileConfidence: 0.86 }, now: new Date("2026-03-31T16:00:00Z") });
+assert.deepEqual(earlyReview.companyTraits, firstReview.companyTraits, "profile cannot churn before the shared March 31 review date");
 assert(annualReview.companyTraits.includes("CashCow") && annualReview.lifecycle === "MatureLeader");
-const reviewedProfile = engine.profile.build({ primaryClassification: "Enterprise Software", companyTraits: ["Cloud", "HighGrowth", "LargeCap"], lifecycle: "Scaling" }, "REVIEW");
+const reviewedProfile = engine.profile.build({}, "REVIEW");
 assert(reviewedProfile.appliedModifiers.includes("CashCow"), "annual profile update changes modifier inputs");
 
 // 18. Short fast noise changes Short, while Long ignores it because its inputs are Daily/Weekly.
@@ -372,11 +372,11 @@ assert.equal(perturbed.finalAction, "buy");
 perturbed = engine.stability.evaluate({ ticker: "PERTURB", horizon: "mid", candidateAction: "sell", allowedActions: ["sell", "avoid"], actionFamily: "defensive", edge: -72, confidence: 80, materialChangeReasons: ["atr_volume_shock"], technical: { signalPersistence: { score: 65 } } });
 assert.equal(perturbed.finalAction, "sell");
 
-// 30–31. Market and trait modifiers are capped centrally, even if several tags
-// or an event coincide.
+// 30–31. Market and all four profile slots remain capped centrally, even if
+// several valid contextual signals coincide.
 const cappedMarket = engine.market.forHorizon({ regime: "shock", riskAddBase: 38, yield: { riskAdd: 12 }, earnings: { riskAdd: 20, confidencePenalty: 10 } }, "long", { effectiveModifiers: { marketSensitivity: 1.2, rateSensitivity: 1.15, eventSensitivity: 1.12 } });
 assert(cappedMarket.riskAdd <= engine.config.market.maxRiskAdd.long);
-const capProfile = engine.profile.build({ primaryClassification: "Test", companyTraits: ["HighGrowth", "HighBeta", "HighVolatility", "CrowdedLeader", "CashCow", "MarketLeader", "RegulatoryRisk"], lifecycle: "EstablishedLeader" }, "CAP_ALL");
+const capProfile = engine.profile.build({ primaryClassification: "Real Estate", businessTrait: "HighGrowth", riskTrait: "InterestRateSensitive", lifecycle: "Scaling" }, "CAP_ALL");
 for (const key of ["riskSensitivity", "marketSensitivity", "exhaustionSensitivity", "normalAtrTolerance", "strongBuyOpportunity", "eventSensitivity"]) {
   const [low, high] = engine.config.profile.modifierCaps[["marketSensitivity", "exhaustionSensitivity"].includes(key) ? "special" : "normal"];
   assert(capProfile.effectiveModifiers[key] >= low && capProfile.effectiveModifiers[key] <= high, `${key} must remain capped`);
@@ -404,14 +404,12 @@ assert.equal(inverseDecision.horizons.long.debug.etfUnderlying.alignment, "suppo
 assert.equal(engine.etfProfile.underlyingContext({ profile: engine.profile.build(profiles.profileFor("SQQQ"), "SQQQ"), ownDirection: 60, underlyingDirection: 60 }).alignment, "limiting");
 assert.notEqual(inverseDecision.horizons.short.states.direction.score, -underlyingFeatures.horizons.short.trend.moving_averages.ema_20_4h.value, "underlying cannot replace ETF Direction");
 
-// 37. Every individual stock has a reviewed specific classification and at
-// least three Company Traits; ETFs are deliberately excluded from this rule.
-for (const ticker of watchlist) {
-  const definition = profiles.profileFor(ticker);
-  if (definition.isETF) continue;
-  assert(definition.primaryClassification && definition.primaryClassification !== "Unclassified Equity", `${ticker} needs a primary classification`);
-  assert((definition.companyTraits || []).length >= 3, `${ticker} needs at least three Company Traits`);
-}
+// 37. A stock profile has exactly its optional two canonical trait slots;
+// ordinary watchlist membership alone must not fabricate a completed profile.
+const incompleteStock = profiles.profileFor("UNKNOWN", { quoteType: "EQUITY", sector: "Technology" });
+assert.equal(incompleteStock.primaryClassification, null);
+assert.equal(incompleteStock.companyTraits.length, 0);
+assert.equal(incompleteStock.profileStatus, "unavailable");
 
 for (const decision of [complete, missing, calmDecision, noisyDecision]) {
   for (const horizonDecision of Object.values(decision.horizons)) {
