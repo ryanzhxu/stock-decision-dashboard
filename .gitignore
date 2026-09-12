@@ -10,3 +10,4 @@ data/
 node_modules/
 .venv/
 watchlist.shared.json
+.wrangler/
