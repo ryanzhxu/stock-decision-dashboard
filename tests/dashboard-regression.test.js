@@ -112,6 +112,7 @@ assert.doesNotMatch(executionEngine, /previousLandscape|previousCluster|clusterS
 assert.match(technicalEngine, /unified_category_confluence/);
 assert.match(technicalEngine, /categoryContributionCap/);
 assert.equal(html.includes("Action Score"), false);
+assert.doesNotMatch(html, /data-market-filter="megaCap"/, "V2.1 internal size must not become a visible dashboard filter/tag");
 assert.match(main, /executionIntent/);
 assert.match(main, /priceLandscape/);
 assert.match(main, /recommendedBuyAddRange/);

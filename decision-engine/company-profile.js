@@ -25,7 +25,8 @@
     if (value == null) return true;
     const vocabulary = field === "primaryClassification" ? classifier?.PRIMARY_CLASSIFICATIONS
       : field === "businessTrait" ? classifier?.BUSINESS_TRAITS
-        : field === "riskTrait" ? classifier?.RISK_TRAITS : classifier?.LIFECYCLES;
+        : field === "riskTrait" ? classifier?.RISK_TRAITS
+          : field === "sizeClass" ? classifier?.SIZE_CLASSES : classifier?.LIFECYCLES;
     return !vocabulary || vocabulary.includes(value);
   }
 
@@ -36,14 +37,19 @@
       businessTrait: source.businessTrait ?? source.business_trait ?? legacyTraits[0] ?? fallback.businessTrait ?? null,
       riskTrait: source.riskTrait ?? source.risk_trait ?? legacyTraits[1] ?? fallback.riskTrait ?? null,
       lifecycle: source.lifecycle ?? source.lifecycleTag ?? source.lifecycle_tag ?? fallback.lifecycle ?? null,
+      sizeClass: source.sizeClass ?? source.size_class ?? fallback.sizeClass ?? null,
     };
-    fields.forEach((field) => { if (!isAllowed(field, profile[field])) profile[field] = null; });
+    [...fields, "sizeClass"].forEach((field) => { if (!isAllowed(field, profile[field])) profile[field] = null; });
     profile.companyTraits = [profile.businessTrait, profile.riskTrait].filter(Boolean);
     const complete = fields.every((field) => Boolean(profile[field]));
     const partial = fields.some((field) => Boolean(profile[field]));
-    profile.profileStatus = source.profileStatus || source.profile_status || (complete ? "complete" : partial ? "incomplete" : "unavailable");
+    // Derive status from validated V2.1 slots instead of trusting a stale
+    // persisted V2 status whose legacy values were discarded above.
+    profile.profileStatus = complete ? "complete" : partial ? "incomplete" : "unavailable";
     profile.profileSource = source.profileSource || source.profile_source || "automatic";
     profile.profileEvidence = source.profileEvidence || source.profile_evidence || {};
+    profile.profileSufficiency = source.profileSufficiency || source.profile_sufficiency || fallback.profileSufficiency || {};
+    profile.profileSchemaVersion = source.profileSchemaVersion || source.profile_schema_version || fallback.profileSchemaVersion || null;
     // Do not alter Profile Confidence or its contribution to final Confidence.
     profile.profileConfidence = Number.isFinite(source.profileConfidence) ? clamp(source.profileConfidence, 0, 1)
       : Number.isFinite(fallback.profileConfidence) ? clamp(fallback.profileConfidence, 0, 1) : 0.82;
@@ -62,16 +68,21 @@
       : normalizeProfile(input);
     const aggregate = blankModifiers();
     const appliedModifiers = [];
+    const modifierProvenance = [];
     const modifierSources = [
-      [profile.primaryClassification, engine.config.profile.primaryClassificationModifiers],
-      [profile.businessTrait, engine.config.profile.businessTraitModifiers],
-      [profile.riskTrait, engine.config.profile.riskTraitModifiers],
-      [profile.lifecycle, engine.config.profile.lifecycleModifiers],
+      [profile.primaryClassification, engine.config.profile.primaryClassificationModifiers, "primaryClassification", true],
+      [profile.businessTrait, engine.config.profile.businessTraitModifiers, "businessTrait", true],
+      [profile.riskTrait, engine.config.profile.riskTraitModifiers, "riskTrait", true],
+      [profile.lifecycle, engine.config.profile.lifecycleModifiers, "lifecycle", true],
+      // Size is a bounded internal modifier only. It intentionally does not
+      // enter Company Traits or the user-visible Applied Modifiers list.
+      [profile.sizeClass, engine.config.profile.sizeClassModifiers, "sizeClass", false],
     ];
-    modifierSources.forEach(([value, table]) => {
+    modifierSources.forEach(([value, table, slot, visible]) => {
       const modifier = value && table?.[value];
       if (!modifier) return;
-      appliedModifiers.push(value);
+      if (visible) appliedModifiers.push(value);
+      modifierProvenance.push({ slot, value, visible: Boolean(visible) });
       Object.entries(modifier.directionWeights || {}).forEach(([key, delta]) => { aggregate.directionWeights[key] = (aggregate.directionWeights[key] || 0) + Number(delta || 0); });
       Object.entries(modifier.confirmationWeights || {}).forEach(([key, delta]) => { aggregate.confirmationWeights[key] = (aggregate.confirmationWeights[key] || 0) + Number(delta || 0); });
       Object.entries(modifier.benchmarkWeights || {}).forEach(([key, delta]) => { aggregate.benchmarkWeights[key] = (aggregate.benchmarkWeights[key] || 0) + Number(delta || 0); });
@@ -90,7 +101,7 @@
     aggregate.benchmarkWeights = benchmarkTotal > 0
       ? { spy: aggregate.benchmarkWeights.spy / benchmarkTotal, qqq: aggregate.benchmarkWeights.qqq / benchmarkTotal }
       : { spy: 0.5, qqq: 0.5 };
-    return { modifiers: aggregate, appliedModifiers };
+    return { modifiers: aggregate, appliedModifiers, modifierProvenance };
   }
 
   function easternParts(value) {
@@ -128,7 +139,12 @@
     if (classification.isETF || classification.type === "etf") return engine.etfProfile.build(classification);
     const profile = normalizeProfile(classification, cachedState(ticker) || {});
     const modifierSet = effectiveModifiers(profile);
-    return { type: "stock", isETF: false, ...profile, effectiveModifiers: modifierSet.modifiers, appliedModifiers: modifierSet.appliedModifiers };
+    return {
+      type: "stock", isETF: false, ...profile,
+      effectiveModifiers: modifierSet.modifiers,
+      appliedModifiers: modifierSet.appliedModifiers,
+      modifierProvenance: modifierSet.modifierProvenance,
+    };
   }
 
   function forHorizon(profile, horizon) { return profile?.isETF ? engine.etfProfile.forHorizon(profile, horizon) : profile; }

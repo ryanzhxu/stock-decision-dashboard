@@ -105,7 +105,7 @@ function market({ regime = "normal", fearGreed = 50, vix = 18 } = {}) {
   } };
 }
 
-function decide(features, marketInput = market(), ticker = "TEST", classification = { tags: ["MegaCap"] }) {
+function decide(features, marketInput = market(), ticker = "TEST", classification = { businessTrait: "HighGrowth", sizeClass: "MegaCap" }) {
   return engine.decide({ ticker, price: 100, technicalFeatures: features, marketContext: marketInput, classification, metadata: {}, language: "en" });
 }
 

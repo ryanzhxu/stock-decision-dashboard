@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS decision_history (
     limiting_reasons_json TEXT,
     primary_classification TEXT,
     lifecycle TEXT,
+    size_class TEXT,
     company_traits_json TEXT,
     applied_profile_modifiers_json TEXT,
     leveraged INTEGER,

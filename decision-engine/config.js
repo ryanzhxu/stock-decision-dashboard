@@ -160,6 +160,55 @@
       penalties: freeze({ marketConflict: 18, exhaustionConflict: 16, eventUncertainty: 12, internalConflict: 18, priceConflict: 14, invalidLandscape: 18 }),
     }),
     profile: freeze({
+      // Company Profile V2.1 is deliberately a metadata-only, structural
+      // classifier.  The numeric evidence requirements live here rather than
+      // being hidden in classifier control flow so reviews and audits can
+      // explain every result without touching recommendation parameters.
+      schemaVersion: "2.1",
+      classifier: freeze({
+        sizeClass: freeze({ megaCapMarketCap: 200_000_000_000 }),
+        business: freeze({
+          tieBreakOrder: freeze(["MarketLeader", "HighGrowth", "MatureGrowth", "CashCow", "Defensive", "Cyclical", "Turnaround", "EmergingGrowth"]),
+          minimumEvidence: freeze({ MarketLeader: 3, HighGrowth: 3, MatureGrowth: 3, CashCow: 4, Defensive: 3, Cyclical: 3, Turnaround: 3, EmergingGrowth: 4 }),
+          // Evidence weights are intentionally separate from the V1 Decision
+          // Engine. They describe only slow-moving issuer metadata.
+          points: freeze({
+            leaderScale: 2, leaderMargin: 1, leaderLanguage: 2,
+            highGrowthStrong: 2, highGrowthBase: 1, highGrowthScale: 1, highGrowthProfitability: 1, highGrowthScalableBusiness: 1,
+            matureGrowthScale: 1, matureGrowthGrowth: 2, matureGrowthMargin: 1,
+            cashCowScale: 1, cashCowMargin: 3, cashCowLowGrowth: 1,
+            defensivePrimary: 2, defensiveMargin: 1,
+            cyclicalLanguage: 3, turnaroundLanguage: 3,
+            emergingGrowthScale: 2, emergingGrowthGrowth: 2, emergingGrowthCondition: 1,
+          }),
+          thresholds: freeze({
+            leaderMarketCap: 200_000_000_000, leaderMargin: 0.15,
+            highGrowthStrong: 0.25, highGrowth: 0.18, highGrowthScaleFloor: 10_000_000_000, highGrowthProfitMarginFloor: 0,
+            matureGrowthMarketCap: 40_000_000_000, matureGrowthLow: 0.04, matureGrowthHigh: 0.18, matureGrowthMargin: 0.10,
+            cashCowMarketCap: 10_000_000_000, cashCowMargin: 0.20, cashCowGrowthCeiling: 0.18,
+            defensiveMargin: 0.08,
+            emergingGrowthMarketCap: 10_000_000_000, emergingGrowth: 0.25, emergingMarginCeiling: 0.05,
+          }),
+        }),
+        lifecycle: freeze({
+          tieBreakOrder: freeze(["Declining", "Recovery", "Emerging", "Scaling", "EstablishedLeader", "MatureLeader"]),
+          minimumEvidence: freeze({ Declining: 3, Recovery: 3, Emerging: 4, Scaling: 3, EstablishedLeader: 4, MatureLeader: 4 }),
+          points: freeze({
+            decliningLanguage: 3, recoveryLanguage: 3,
+            emergingScale: 2, emergingStage: 2,
+            scalingGrowth: 2, scalingNonHugeScale: 1, scalingScalableBusiness: 1,
+            establishedScale: 3, establishedMargin: 1, establishedBusinessLeader: 1,
+            matureScale: 1, matureMargin: 1, matureGrowth: 2,
+          }),
+          thresholds: freeze({
+            emergingMarketCap: 2_000_000_000,
+            scalingGrowth: 0.18, scalingMarketCapCeiling: 200_000_000_000,
+            establishedMarketCap: 200_000_000_000, establishedMargin: 0.08,
+            matureMarketCap: 40_000_000_000, matureMargin: 0.10, matureGrowthFloor: 0, matureGrowthCeiling: 0.12,
+          }),
+        }),
+        risk: freeze({ highBeta: 1.45, lowBeta: 0.75 }),
+      }),
       review: freeze({ annualReviewMonth: 3, annualReviewDay: 31, timeZone: "America/New_York", cacheLimit: 300 }),
       modifierCaps: freeze({ normal: freeze([0.85, 1.15]), special: freeze([0.80, 1.20]) }),
       primaryClassificationModifiers: freeze({
@@ -169,6 +218,7 @@
         "Cloud Infrastructure": freeze({ directionWeights: freeze({ ma: 0.04 }), confirmationWeights: freeze({ relativeStrength: 0.06, participation: 0.04 }), marketSensitivity: 0.05, benchmarkWeights: freeze({ qqq: 0.06 }) }),
         "Consumer Technology": freeze({ confirmationWeights: freeze({ relativeStrength: 0.04 }), marketSensitivity: 0.04, benchmarkWeights: freeze({ qqq: 0.04 }) }),
         "Internet Platforms": freeze({ confirmationWeights: freeze({ relativeStrength: 0.04 }), eventSensitivity: 0.04, marketSensitivity: 0.03, benchmarkWeights: freeze({ qqq: 0.04 }) }),
+        "Media & Entertainment": freeze({ confirmationWeights: freeze({ participation: 0.04, relativeStrength: 0.03 }), eventSensitivity: 0.04, marketSensitivity: 0.04, benchmarkWeights: freeze({ qqq: 0.03 }) }),
         "E-Commerce": freeze({ confirmationWeights: freeze({ participation: 0.05 }), marketSensitivity: 0.06 }),
         "Digital Advertising": freeze({ confirmationWeights: freeze({ participation: 0.06 }), marketSensitivity: 0.06 }),
         "Telecommunications Infrastructure": freeze({ directionWeights: freeze({ ma: 0.04 }), marketSensitivity: 0.04 }),
@@ -192,8 +242,14 @@
         "Real Estate": freeze({ rateSensitivity: 0.16, marketSensitivity: -0.03, longStability: 0.06 }),
         Materials: freeze({ marketSensitivity: 0.08, confirmationWeights: freeze({ participation: 0.06 }) }),
       }),
+      // Size is deliberately internal.  It preserves only a small
+      // noise/stability context and may never act as a visible Company Trait
+      // or permission to take a bullish action.
+      sizeClassModifiers: freeze({
+        MegaCap: freeze({ riskSensitivity: -0.02, marketSensitivity: -0.02, longStability: 0.03 }),
+        NonMegaCap: freeze({}),
+      }),
       businessTraitModifiers: freeze({
-        MegaCap: freeze({ directionWeights: freeze({ early: -0.05 }), riskSensitivity: -0.03, marketSensitivity: -0.03, longStability: 0.05 }),
         MarketLeader: freeze({ directionWeights: freeze({ ma: 0.04 }), confirmationWeights: freeze({ relativeStrength: 0.06 }), longStability: 0.04 }),
         HighGrowth: freeze({ directionWeights: freeze({ macd: 0.05 }), confirmationWeights: freeze({ relativeStrength: 0.05 }), marketSensitivity: 0.05, rateSensitivity: 0.04, exhaustionSensitivity: 0.05, actionGates: freeze({ buyConfirmation: 2 }) }),
         MatureGrowth: freeze({ directionWeights: freeze({ ma: 0.03 }), longStability: 0.05, normalAtrTolerance: -0.03 }),
@@ -201,6 +257,7 @@
         Defensive: freeze({ marketSensitivity: -0.07, longStability: 0.09, actionGates: freeze({ buyConfirmation: 2 }) }),
         Cyclical: freeze({ confirmationWeights: freeze({ participation: 0.06, relativeStrength: 0.03 }), marketSensitivity: 0.07, longStability: -0.03, actionGates: freeze({ buyConfirmation: 2 }) }),
         Turnaround: freeze({ riskSensitivity: 0.06, longStability: -0.06, actionGates: freeze({ buyDirection: 3, buyConfirmation: 7, strongBuyConfirmation: 8 }) }),
+        EmergingGrowth: freeze({ directionWeights: freeze({ macd: 0.04 }), confirmationWeights: freeze({ relativeStrength: 0.04 }), riskSensitivity: 0.04, normalAtrTolerance: 0.03, longStability: -0.04, actionGates: freeze({ buyConfirmation: 3, strongBuyConfirmation: 4 }) }),
       }),
       riskTraitModifiers: freeze({
         HighVolatility: freeze({ normalAtrTolerance: 0.10, exhaustionSensitivity: -0.05, actionGates: freeze({ buyConfirmation: 2 }) }),

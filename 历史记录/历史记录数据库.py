@@ -46,6 +46,11 @@ def initialize(path: str | os.PathLike[str] | None = None) -> Path:
     conn = _connect(db_path)
     try:
         conn.executescript(schema)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(decision_history)").fetchall()}
+        if "size_class" not in columns:
+            # V2.1 profile context enhancement. Historical rows are never
+            # rewritten; only subsequent EOD snapshots populate this field.
+            conn.execute("ALTER TABLE decision_history ADD COLUMN size_class TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -83,7 +88,7 @@ DECISION_COLUMNS = (
     "action", "confidence", "price_state", "current_price", "opportunity_low", "opportunity_high",
     "reduce_low", "reduce_high", "invalidation", "landscape_quality", "direction", "confirmation",
     "risk", "exhaustion", "market_regime", "market_context_json", "technical_features_json",
-    "supporting_reasons_json", "limiting_reasons_json", "primary_classification", "lifecycle",
+    "supporting_reasons_json", "limiting_reasons_json", "primary_classification", "lifecycle", "size_class",
     "company_traits_json", "applied_profile_modifiers_json", "leveraged", "etf_direction", "underlying",
     "etf_modifiers_json", "material_change_json",
 )

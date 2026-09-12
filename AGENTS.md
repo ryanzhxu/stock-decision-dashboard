@@ -9,7 +9,7 @@ This is a lightweight stock decision dashboard. It displays a shared watchlist, 
 - `server.py` fetches, normalizes, caches, and serves market, quote, earnings, and independent page data.
 - `main.js` owns application state, data integration, and DOM rendering. It must never calculate a recommendation.
 - `technical-features.js` produces the canonical technical feature object used by both the Technical tab and the Decision Engine.
-- `decision-engine/company-profile-classifier.js` is the deterministic, metadata-only Company Profile V2 classifier. `profile-definitions.js` validates its canonical stock slots and holds the separate ETF definitions.
+- `decision-engine/company-profile-classifier.js` is the deterministic, metadata-only Company Profile V2.1 classifier. `profile-definitions.js` validates its canonical stock slots and holds the separate ETF definitions.
 - `decision-engine/` contains the calibrated V1 recommendation model. `etf-profile.js` supplies ETF-specific behavior modifiers.
 - `decision-presentation.js` is a pure UI helper for execution labels, reason translation, and the native DOM/CSS Price Landscape model.
 - `scripts/` contains bounded, read-only audit/shadow tooling, not production history storage.
@@ -178,7 +178,9 @@ each write.
 `market_date + ticker + horizon`; repeat same-day runs UPSERT rather than
 duplicate. Store compact final Decision state, Price Landscape, core model
 states, market context, compact canonical technical features/reason codes, and
-stock/ETF profile context. Never store raw OHLCV arrays or complete indicator
+stock/ETF profile context. EOD stock context may retain internal `sizeClass`
+for future offline analysis, but it must never promote it into a Company Trait
+or rewrite existing history rows. Never store raw OHLCV arrays or complete indicator
 series. `eod_runs` is a small operational table recording started/completed
 status, counts, error summary, and SQLite size. Unavailable tickers receive
 explicit unavailable rows after a valid market-day run.
@@ -208,20 +210,24 @@ Every horizon Fibonacci object has independent derivation/source identifiers. Eq
 
 ## Profiles
 
-Ordinary stocks use exactly four optional canonical slots, in this order:
+Ordinary stocks expose exactly four optional canonical slots, in this order:
 
-1. `primaryClassification` — exactly one of: Semiconductors, Semiconductor Equipment, Enterprise Software, Cloud Infrastructure, Consumer Technology, Internet Platforms, E-Commerce, Digital Advertising, Telecommunications Infrastructure, Capital Markets, Banking, Digital Financial Services, Payments, Insurance, Managed Care & Health Services, Pharmaceuticals, Biotechnology, Medical Devices, Consumer Discretionary, Consumer Staples, Retail, Industrials, Aerospace & Defense, Transportation & Logistics, Energy, Utilities, Real Estate, or Materials.
-2. `businessTrait` — exactly one of: MegaCap, MarketLeader, HighGrowth, MatureGrowth, CashCow, Defensive, Cyclical, or Turnaround.
+1. `primaryClassification` — exactly one of: Semiconductors, Semiconductor Equipment, Enterprise Software, Cloud Infrastructure, Consumer Technology, Internet Platforms, Media & Entertainment, E-Commerce, Digital Advertising, Telecommunications Infrastructure, Capital Markets, Banking, Digital Financial Services, Payments, Insurance, Managed Care & Health Services, Pharmaceuticals, Biotechnology, Medical Devices, Consumer Discretionary, Consumer Staples, Retail, Industrials, Aerospace & Defense, Transportation & Logistics, Energy, Utilities, Real Estate, or Materials.
+2. `businessTrait` — exactly one of: MarketLeader, HighGrowth, MatureGrowth, CashCow, Defensive, Cyclical, Turnaround, or EmergingGrowth.
 3. `riskTrait` — exactly one of: HighVolatility, RegulatoryRisk, InterestRateSensitive, CommoditySensitive, MacroSensitive, CrowdedLeader, ExecutionRisk, or LowVolatility.
 4. `lifecycle` — exactly one of: Emerging, Scaling, EstablishedLeader, MatureLeader, Recovery, or Declining.
 
+`sizeClass` is a fifth **internal-only** context, currently `MegaCap` or `NonMegaCap`, derived from market capitalization. It is never a Company Trait, UI tag, visible Applied Modifier, direction vote, or action gate. It may apply only a small, bounded noise/risk/stability context through `sizeClassModifiers`.
+
 `companyTraits` is only the compatibility/display array `[businessTrait, riskTrait].filter(Boolean)`. It is never a free-form tag list. Missing evidence remains `null`, gives no modifier, and produces `incomplete` or `unavailable` profile status; never guess a generic category, HighGrowth, HighVolatility, CashCow, or EstablishedLeader.
 
-The server creates stock profiles automatically from compact existing provider metadata (industry, sector, business summary, market cap, growth, margin, and beta where present). The production classifier must not inspect ticker symbols or use a manual ordinary-stock ticker map. It stores compact current profiles in the persistent `company_profiles` table inside `watchlist.db`; Dashboard restart must not change their source of truth. Complete profiles do not change on normal hourly refreshes. Incomplete profiles may fill a null slot, but never overwrite a populated slot outside the annual review.
+The server creates stock profiles automatically from compact existing provider metadata (industry, sector, business summary, market cap, growth, margin, and beta where present). The production classifier must not inspect ticker symbols or use a manual ordinary-stock ticker map. Business and Lifecycle selection use centralized metadata-evidence scoring with sufficiency thresholds and deterministic tie breaking, not a first-match MegaCap priority. Lifecycle requires staged structural evidence: growth alone cannot make a huge mature issuer `Scaling`; `Recovery` and `Declining` require issuer-specific summary evidence rather than a generic mention of an advisory service. Risk remains conservative: absent direct metadata evidence stays `null`, and `CrowdedLeader` is never auto-guessed from price/performance.
+
+It stores compact current profiles in the persistent `company_profiles` table inside `watchlist.db`; Dashboard restart must not change their source of truth. The V2.1 migration runs once per stock when compact fresh/cached metadata is available, replaces legacy slot values with the current classifier result, removes legacy visible `MegaCap`, and stores `profile_schema_version = 2.1`. It is idempotent. Complete V2.1 profiles do not change on normal hourly refreshes. Incomplete profiles may fill a null slot, but never overwrite a populated slot outside the annual review.
 
 The only annual review date is **March 31, `America/New_York`**. A review does not force a change and sparse review metadata must never erase an established value. A valid review persists the date/provenance; it must also update the modifiers actually used by the engine. `profileConfidence` and its existing Final Confidence contribution are intentionally unchanged in V2.
 
-All four slots use conservative, centralized, aggregate-then-cap modifiers for Direction/Confirmation weights, risk and exhaustion tolerance, market/rate/event sensitivity, execution gates, benchmark emphasis, and stability. They contextualize existing signals; they never add action points, override Price State → Action Family, or create a second recommendation engine. General caps remain 0.85–1.15; justified special sensitivity caps remain 0.80–1.20.
+The four visible slots use conservative, centralized, aggregate-then-cap modifiers for Direction/Confirmation weights, risk and exhaustion tolerance, market/rate/event sensitivity, execution gates, benchmark emphasis, and stability. Internal size context is narrower: it may affect only small bounded risk/market/stability sensitivity and never votes Direction, changes confirmation, or alters an action gate. No profile context may add action points, override Price State → Action Family, or create a second recommendation engine. General caps remain 0.85–1.15; justified special sensitivity caps remain 0.80–1.20.
 
 ETFs remain isolated. They never receive stock profile slots, Company Traits, or a Lifecycle. ETF profile fields are `isETF`, `leveraged`, `direction` (`long` or `inverse`), `underlying`, and optional `underlyingTicker`. Ordinary long ETFs reuse the V1 technical/market model. Leveraged ETFs use stricter gates and higher risk, exhaustion, and market sensitivity. Inverse ETFs use inverted underlying direction only as bounded confirmation; their own Technical states remain the Direction source.
 
@@ -248,7 +254,7 @@ every decision must be correct after a restart even without either cache.
 - Every changed Decision behavior needs targeted tests.
 - Never add ticker-specific recommendation hardcodes.
 - Never add ticker-specific ordinary-stock profile definitions; preserve the ETF map as the separate ETF architecture.
-- Keep Company Profile V2 evidence compact and metadata-only. It must never use a short-term price move, RSI, MACD, or current recommendation to define company identity.
+- Keep Company Profile V2.1 evidence compact and metadata-only. It must never use a short-term price move, RSI, MACD, or current recommendation to define company identity. Put every evidence threshold, score weight, sufficiency minimum, and tie-break order in `decision-engine/config.js`.
 
 ## Common mistakes to avoid
 
@@ -279,6 +285,9 @@ every decision must be correct after a restart even without either cache.
 - sharing a Fibonacci object across horizons, or forcing different anchors merely to make horizons look different
 - ETF using fake company traits
 - free-form, provider-sector, or legacy tags as Company Traits (`Technology`, `Equity`, `DiversifiedBusiness`, `UnreviewedProfile`)
+- exposing `MegaCap` as a Business Trait, Company Trait, visible UI tag, or visible Applied Modifier
+- treating market capitalization alone as a Business Trait or a Lifecycle
+- classifying `Scaling` from revenue growth alone, or `Recovery` from generic non-issuer recovery language
 - generic `EstablishedLeader` or a business/risk trait without direct metadata evidence
 - rolling 365-day Company Profile reviews, profiles that churn hourly, or annual sparse data erasing valid profile fields
 - applying a Company Profile modifier outside the centralized bounded V2 matrix

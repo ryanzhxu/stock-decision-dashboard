@@ -70,9 +70,9 @@ try {
     quoteType: "EQUITY", industry: "Semiconductors", marketCap: 2_400_000_000_000,
     revenueGrowth: 0.28, profitMargins: 0.42, beta: 1.62,
     classification: {
-      primaryClassification: "Semiconductors", businessTrait: "MegaCap", riskTrait: "HighVolatility",
-      lifecycle: "Scaling", companyTraits: ["MegaCap", "HighVolatility"], profileStatus: "complete",
-      profileSource: "automatic", profileConfidence: 0.82, lastProfileReview: "2026-03-31T03:30:00-04:00",
+      primaryClassification: "Semiconductors", businessTrait: "HighGrowth", riskTrait: "HighVolatility",
+      lifecycle: "EstablishedLeader", sizeClass: "MegaCap", companyTraits: ["HighGrowth", "HighVolatility"], profileStatus: "complete",
+      profileSource: "automatic", profileSchemaVersion: "2.1", profileConfidence: 0.82, lastProfileReview: "2026-03-31T03:30:00-04:00",
     },
   };
   const unavailable = { ticker: "NOPE", price: null, quote_status: "unavailable", history: { timestamps: [], closes: [], availability: "unavailable" }, metadata: { quoteType: "EQUITY" } };
@@ -104,8 +104,9 @@ try {
   assert.equal(nopeMid.action, null);
   assert.equal(staleLong.data_status, "unavailable", "prior-day cache must not become a current EOD recommendation");
   assert.equal(stockShort.primary_classification, "Semiconductors");
-  assert.deepEqual(stockShort.company_traits, ["MegaCap", "HighVolatility"]);
-  assert.equal(stockShort.business_trait, "MegaCap");
+  assert.deepEqual(stockShort.company_traits, ["HighGrowth", "HighVolatility"]);
+  assert.equal(stockShort.business_trait, "HighGrowth");
+  assert.equal(stockShort.size_class, "MegaCap", "EOD stores internal V2.1 size context without promoting it to a trait");
   assert.equal(stockShort.risk_trait, "HighVolatility");
   assert.equal(stockShort.profile_status, "complete");
   assert.equal(stockShort.profile_source, "automatic");

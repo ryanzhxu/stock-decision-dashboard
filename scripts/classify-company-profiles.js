@@ -7,6 +7,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
+require(path.join(ROOT, "decision-engine", "config.js"));
 const classifier = require(path.join(ROOT, "decision-engine", "company-profile-classifier.js"));
 
 const [inputPath, outputPath] = process.argv.slice(2);

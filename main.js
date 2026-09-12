@@ -149,20 +149,26 @@ function profileFor(ticker, quote = {}) {
   const defined = window.ProfileDefinitions?.profileFor?.(ticker, quote.metadata || quote) || {};
   const upstream = quote.metadata?.classification || quote.classification || {};
   if (defined.isETF || defined.type === "etf") return { ...defined };
-  const businessTrait = upstream.businessTrait || upstream.business_trait || defined.businessTrait || null;
-  const riskTrait = upstream.riskTrait || upstream.risk_trait || defined.riskTrait || null;
+  // ProfileDefinitions validates persisted slots against the current V2.1
+  // vocabularies. Never let a stale value (for example V2 MegaCap-as-trait)
+  // bypass that validation in presentation.
+  const businessTrait = defined.businessTrait || null;
+  const riskTrait = defined.riskTrait || null;
   return {
-    ...defined,
     ...upstream,
-    primaryClassification: upstream.primaryClassification || upstream.primary_classification || defined.primaryClassification || null,
+    ...defined,
+    primaryClassification: defined.primaryClassification || null,
     businessTrait,
     riskTrait,
     companyTraits: [businessTrait, riskTrait].filter(Boolean),
-    lifecycle: upstream.lifecycle || defined.lifecycle || null,
-    profileStatus: upstream.profileStatus || upstream.profile_status || defined.profileStatus || "unavailable",
-    profileSource: upstream.profileSource || upstream.profile_source || defined.profileSource || "automatic",
-    profileEvidence: upstream.profileEvidence || upstream.profile_evidence || defined.profileEvidence || {},
-    category: upstream.primaryClassification || upstream.primary_classification || defined.primaryClassification || null,
+    lifecycle: defined.lifecycle || null,
+    sizeClass: defined.sizeClass || null,
+    profileStatus: defined.profileStatus || "unavailable",
+    profileSource: defined.profileSource || "automatic",
+    profileEvidence: defined.profileEvidence || {},
+    profileSufficiency: defined.profileSufficiency || {},
+    profileSchemaVersion: defined.profileSchemaVersion || null,
+    category: defined.primaryClassification || null,
     tags: [businessTrait, riskTrait].filter(Boolean),
   };
 }
@@ -258,7 +264,6 @@ function sortRows(rows) {
 function matchesFilter(row) {
   const tags = new Set(row.classification.tags || []);
   if (state.marketFilter === "all" || state.marketFilter === "us") return true;
-  if (state.marketFilter === "megaCap") return tags.has("MegaCap");
   if (state.marketFilter === "growth") return tags.has("Growth") || tags.has("HighGrowth");
   if (state.marketFilter === "speculative") return tags.has("Speculative") || tags.has("HighVolatility");
   if (state.marketFilter === "dividend") return tags.has("Dividend");
@@ -528,6 +533,8 @@ function profileFromRow(row) {
     primaryClassification: row.classification?.primaryClassification || null,
     businessTrait: row.classification?.businessTrait || null, riskTrait: row.classification?.riskTrait || null,
     companyTraits: row.classification?.companyTraits || [], lifecycle: row.classification?.lifecycle || null,
+    sizeClass: row.classification?.sizeClass || null,
+    profileSchemaVersion: row.classification?.profileSchemaVersion || null,
     profileConfidence: row.classification?.profileConfidence ?? null, lastProfileReview: row.classification?.lastProfileReview || null,
     appliedModifiers: [], effectiveModifiers: {},
   };
@@ -612,6 +619,7 @@ function modifierDescription(tag) {
     "Cloud Infrastructure": { en: "Trend, Relative Strength, and participation receive more emphasis.", zh: "更重视趋势、相对强弱与参与度。" },
     "Consumer Technology": { en: "Relative Strength and growth-market context receive modestly more emphasis.", zh: "适度提高相对强弱与成长市场背景的重要性。" },
     "Internet Platforms": { en: "Relative Strength is emphasized and event sensitivity is modestly higher.", zh: "更重视相对强弱，并适度提高事件敏感度。" },
+    "Media & Entertainment": { en: "Participation, Relative Strength, and event context receive moderate emphasis.", zh: "适度提高参与度、相对强弱和事件环境的重要性。" },
     "E-Commerce": { en: "Participation and consumer/macro context receive more emphasis.", zh: "更重视参与度以及消费／宏观环境。" },
     "Digital Advertising": { en: "Participation and advertising-cycle context receive more emphasis.", zh: "更重视参与度与广告周期背景。" },
     "Telecommunications Infrastructure": { en: "Trend structure and order-cycle context receive more emphasis.", zh: "更重视趋势结构与订单周期背景。" },
@@ -634,7 +642,6 @@ function modifierDescription(tag) {
     Utilities: { en: "Rate relevance and long-horizon stability are materially higher.", zh: "显著提高利率相关性与长期稳定性。" },
     "Real Estate": { en: "Rate relevance is materially higher with an income/stability interpretation.", zh: "显著提高利率相关性，并采用收益／稳定性解读。" },
     Materials: { en: "Commodity/global-cycle context and participation receive more emphasis.", zh: "更重视商品／全球周期环境与参与度。" },
-    MegaCap: { en: "Fast-noise sensitivity and broad-market sensitivity are modestly lower.", zh: "适度降低短期噪声与广义市场敏感度。" },
     MarketLeader: { en: "Trend persistence and Relative Strength matter more.", zh: "更重视趋势延续性与相对强弱。" },
     HighGrowth: { en: "Trend/Relative Strength importance and confirmation requirements increase.", zh: "提高趋势／相对强弱的重要性与确认要求。" },
     MatureGrowth: { en: "Trend reliability and long-horizon stability increase modestly.", zh: "适度提高趋势可靠性与长期稳定性。" },
@@ -642,6 +649,7 @@ function modifierDescription(tag) {
     Defensive: { en: "Broad-market sensitivity is lower and breakout execution is stricter.", zh: "降低广义市场敏感度，并收紧突破执行条件。" },
     Cyclical: { en: "Participation confirmation and macro sensitivity are higher.", zh: "提高参与度确认与宏观敏感度。" },
     Turnaround: { en: "Bullish execution requires materially stronger confirmation.", zh: "多头执行需要显著更强的确认。" },
+    EmergingGrowth: { en: "Growth confirmation remains important while risk controls and long-horizon stability stay stricter.", zh: "成长确认仍然重要，同时维持更严格的风险控制与长期稳定性要求。" },
     HighVolatility: { en: "Normal ATR and exhaustion tolerance are higher; entry confirmation is modestly stricter.", zh: "提高正常 ATR 与衰竭容忍度，并适度收紧介入确认。" },
     RegulatoryRisk: { en: "Event sensitivity and execution requirements increase.", zh: "提高事件敏感度与执行要求。" },
     InterestRateSensitive: { en: "US 10Y/rate-regime relevance increases without a fixed rate direction.", zh: "提高美国 10 年期／利率环境相关性，不预设固定利率方向。" },

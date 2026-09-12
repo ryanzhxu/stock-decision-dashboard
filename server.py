@@ -110,6 +110,7 @@ COMPANY_PROFILE_CLASSIFIER_NODE_RUNNER = os.path.join(ROOT, "scripts", "classify
 COMPANY_PROFILE_TIMEZONE = ZoneInfo("America/New_York")
 COMPANY_PROFILE_REVIEW_MONTH = 3
 COMPANY_PROFILE_REVIEW_DAY = 31
+COMPANY_PROFILE_SCHEMA_VERSION = "2.1"
 COMPANY_PROFILE_REVIEW_ENABLED = os.environ.get("COMPANY_PROFILE_REVIEW_ENABLED", "true").strip().lower() not in {"0", "false", "no", "n"}
 COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS = int(os.environ.get("COMPANY_PROFILE_REVIEW_STARTUP_DELAY_SECONDS", "45"))
 CACHE = {}
@@ -158,7 +159,7 @@ COMPANY_PROFILE_REVIEW_STATE = {
     "last_started_at": None, "last_completed_at": None, "last_status": None,
     "last_error": None, "next_run_at": None,
 }
-WATCHLIST_SCHEMA_VERSION = 2
+WATCHLIST_SCHEMA_VERSION = 3
 WATCHLIST_MIGRATION_TICKERS = ["QQQ"]
 DEFAULT_SHARED_WATCHLIST = [
     "NVDA", "TSLA", "AMD", "BABA", "GOOGL", "AMZN", "AAPL", "CRCL", "FFAI", "HIMS",
@@ -331,15 +332,29 @@ def init_watchlist_db():
                   business_trait TEXT,
                   risk_trait TEXT,
                   lifecycle TEXT,
+                  size_class TEXT,
                   profile_status TEXT NOT NULL,
                   profile_source TEXT NOT NULL,
                   profile_evidence_json TEXT,
+                  profile_sufficiency_json TEXT,
+                  profile_schema_version TEXT NOT NULL DEFAULT '2.1',
                   profile_confidence REAL NOT NULL DEFAULT 0.82,
                   last_profile_review TEXT,
                   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            # V2.1 is an explicit, idempotent on-disk migration. Existing
+            # V2 rows are marked 2.0 until a compact metadata classification
+            # can safely re-evaluate them; new databases already include all
+            # fields in the CREATE statement above.
+            profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(company_profiles)").fetchall()}
+            if "size_class" not in profile_columns:
+                conn.execute("ALTER TABLE company_profiles ADD COLUMN size_class TEXT")
+            if "profile_sufficiency_json" not in profile_columns:
+                conn.execute("ALTER TABLE company_profiles ADD COLUMN profile_sufficiency_json TEXT")
+            if "profile_schema_version" not in profile_columns:
+                conn.execute("ALTER TABLE company_profiles ADD COLUMN profile_schema_version TEXT NOT NULL DEFAULT '2.0'")
             if not db_exists:
                 for item in normalize_watchlist_items(DEFAULT_SHARED_WATCHLIST):
                     conn.execute(
@@ -368,6 +383,10 @@ def _profile_row_to_payload(row):
         evidence = json.loads(row["profile_evidence_json"] or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
         evidence = {}
+    try:
+        sufficiency = json.loads(row["profile_sufficiency_json"] or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        sufficiency = {}
     business_trait = row["business_trait"]
     risk_trait = row["risk_trait"]
     return {
@@ -377,9 +396,12 @@ def _profile_row_to_payload(row):
         "riskTrait": risk_trait,
         "companyTraits": [value for value in (business_trait, risk_trait) if value],
         "lifecycle": row["lifecycle"],
+        "sizeClass": row["size_class"],
         "profileStatus": row["profile_status"],
         "profileSource": row["profile_source"],
         "profileEvidence": evidence,
+        "profileSufficiency": sufficiency,
+        "profileSchemaVersion": row["profile_schema_version"] or "2.0",
         # Preserve the existing Profile Confidence field and its engine role.
         "profileConfidence": float(row["profile_confidence"]),
         "lastProfileReview": row["last_profile_review"],
@@ -450,7 +472,7 @@ def _classify_company_profiles(metadata_by_ticker):
         shutil.rmtree(temp_directory, ignore_errors=True)
 
 
-def _merged_profile(existing, classified, reviewed_at, allow_replace=False):
+def _merged_profile(existing, classified, reviewed_at, allow_replace=False, migration=False):
     previous = existing or {}
     current = classified or {}
     # Normal refreshes may only fill an incomplete slot.  They must not let a
@@ -460,14 +482,21 @@ def _merged_profile(existing, classified, reviewed_at, allow_replace=False):
     def choose(field):
         prior = previous.get(field)
         candidate = current.get(field)
-        if allow_replace and candidate:
+        if (allow_replace or migration) and candidate:
             return candidate
+        # MegaCap was a V2-only visible Business Trait. A V2.1 migration must
+        # remove it even when currently cached metadata is too sparse to prove
+        # a replacement trait. It survives only as a future internal size class
+        # when actual market-cap metadata is available.
+        if migration and field == "businessTrait" and prior == "MegaCap":
+            return None
         return prior or candidate
 
     primary = choose("primaryClassification")
     business = choose("businessTrait")
     risk = choose("riskTrait")
     lifecycle = choose("lifecycle")
+    size = choose("sizeClass")
     slots = [primary, business, risk, lifecycle]
     status = "complete" if all(slots) else "incomplete" if any(slots) else "unavailable"
     current_evidence = current.get("profileEvidence") if isinstance(current.get("profileEvidence"), dict) else {}
@@ -477,25 +506,30 @@ def _merged_profile(existing, classified, reviewed_at, allow_replace=False):
         "businessTrait": business,
         "riskTrait": risk,
         "lifecycle": lifecycle,
+        "sizeClass": size,
     }
     previous_values = {
         "primaryClassification": previous.get("primaryClassification"),
         "businessTrait": previous.get("businessTrait"),
         "riskTrait": previous.get("riskTrait"),
         "lifecycle": previous.get("lifecycle"),
+        "sizeClass": previous.get("sizeClass"),
     }
     evidence = {}
     for key in field_values:
         # Evidence accompanies the value that actually survives the merge.
         use_current = field_values[key] == current.get(key) and (
-            allow_replace or not previous_values[key]
+            allow_replace or migration or not previous_values[key]
         )
         evidence[key] = (current_evidence.get(key) if use_current else None) or previous_evidence.get(key) or []
     changed = any(field_values[key] != previous_values[key] for key in field_values)
     return {
         "primaryClassification": primary, "businessTrait": business, "riskTrait": risk, "lifecycle": lifecycle,
+        "sizeClass": size,
         "companyTraits": [value for value in (business, risk) if value],
         "profileStatus": status, "profileSource": "automatic", "profileEvidence": evidence,
+        "profileSufficiency": current.get("profileSufficiency") if (allow_replace or migration or not previous) else previous.get("profileSufficiency", {}),
+        "profileSchemaVersion": current.get("profileSchemaVersion") or (COMPANY_PROFILE_SCHEMA_VERSION if migration or not previous else previous.get("profileSchemaVersion")),
         # V2 deliberately retains the existing Profile Confidence behavior.
         "profileConfidence": float(previous.get("profileConfidence", 0.82)),
         "lastProfileReview": reviewed_at if (not previous or allow_replace or changed) else previous.get("lastProfileReview"),
@@ -509,9 +543,11 @@ def _upsert_company_profiles(profiles):
     rows = []
     for ticker, profile in profiles.items():
         rows.append((
-            ticker, profile.get("primaryClassification"), profile.get("businessTrait"), profile.get("riskTrait"), profile.get("lifecycle"),
+            ticker, profile.get("primaryClassification"), profile.get("businessTrait"), profile.get("riskTrait"), profile.get("lifecycle"), profile.get("sizeClass"),
             profile.get("profileStatus") or "unavailable", profile.get("profileSource") or "automatic",
             json.dumps(profile.get("profileEvidence") or {}, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(profile.get("profileSufficiency") or {}, ensure_ascii=False, separators=(",", ":")),
+            profile.get("profileSchemaVersion") or COMPANY_PROFILE_SCHEMA_VERSION,
             float(profile.get("profileConfidence", 0.82)), profile.get("lastProfileReview"), _iso_utc_now(),
         ))
     with COMPANY_PROFILE_LOCK:
@@ -519,15 +555,17 @@ def _upsert_company_profiles(profiles):
             conn.executemany(
                 """
                 INSERT INTO company_profiles (
-                  ticker, primary_classification, business_trait, risk_trait, lifecycle,
-                  profile_status, profile_source, profile_evidence_json, profile_confidence,
+                  ticker, primary_classification, business_trait, risk_trait, lifecycle, size_class,
+                  profile_status, profile_source, profile_evidence_json, profile_sufficiency_json, profile_schema_version, profile_confidence,
                   last_profile_review, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker) DO UPDATE SET
                   primary_classification=excluded.primary_classification,
                   business_trait=excluded.business_trait, risk_trait=excluded.risk_trait,
-                  lifecycle=excluded.lifecycle, profile_status=excluded.profile_status,
+                  lifecycle=excluded.lifecycle, size_class=excluded.size_class, profile_status=excluded.profile_status,
                   profile_source=excluded.profile_source, profile_evidence_json=excluded.profile_evidence_json,
+                  profile_sufficiency_json=excluded.profile_sufficiency_json,
+                  profile_schema_version=excluded.profile_schema_version,
                   profile_confidence=excluded.profile_confidence,
                   last_profile_review=excluded.last_profile_review, updated_at=excluded.updated_at
                 """,
@@ -536,7 +574,7 @@ def _upsert_company_profiles(profiles):
             conn.commit()
 
 
-def _profile_requires_write(previous, merged, annual_review=False):
+def _profile_requires_write(previous, merged, annual_review=False, migration=False):
     """Avoid hourly profile churn while retaining a real annual review record.
 
     A normal refresh may classify an incomplete record again because provider
@@ -547,11 +585,11 @@ def _profile_requires_write(previous, merged, annual_review=False):
     """
     if not previous:
         return True
-    if annual_review:
+    if annual_review or migration:
         return True
     compact_fields = (
-        "primaryClassification", "businessTrait", "riskTrait", "lifecycle",
-        "profileStatus", "profileSource",
+        "primaryClassification", "businessTrait", "riskTrait", "lifecycle", "sizeClass",
+        "profileStatus", "profileSource", "profileSchemaVersion",
     )
     return any(previous.get(field) != merged.get(field) for field in compact_fields)
 
@@ -559,7 +597,7 @@ def _profile_requires_write(previous, merged, annual_review=False):
 def ensure_company_profiles_for_quotes(quotes, force_review=False, now=None):
     """Decorate a payload with compact persistent automatic stock profiles.
 
-    Complete profiles are never reclassified during normal hourly refreshes.
+    Complete V2.1 profiles are never reclassified during normal hourly refreshes.
     Incomplete profiles may fill a missing slot when new metadata becomes
     available; existing validated slots remain immutable until the March 31 ET
     annual review.
@@ -572,9 +610,10 @@ def ensure_company_profiles_for_quotes(quotes, force_review=False, now=None):
         quote = quotes[ticker]
         profile = existing.get(ticker)
         needs_initial_or_missing = not profile or profile.get("profileStatus") != "complete"
+        needs_v21_migration = bool(profile) and profile.get("profileSchemaVersion") != COMPANY_PROFILE_SCHEMA_VERSION
         due = force_review and _profile_review_due(profile.get("lastProfileReview") if profile else None, now_et)
         metadata = quote.get("metadata") if isinstance(quote.get("metadata"), dict) else {}
-        if (needs_initial_or_missing or due) and any(metadata.get(key) for key in ("sector", "industry", "businessSummary", "marketCap", "beta", "revenueGrowth", "profitMargins")):
+        if (needs_initial_or_missing or needs_v21_migration or due) and any(metadata.get(key) for key in ("sector", "industry", "businessSummary", "marketCap", "beta", "revenueGrowth", "profitMargins")):
             candidates[ticker] = metadata
     if candidates:
         try:
@@ -595,10 +634,11 @@ def ensure_company_profiles_for_quotes(quotes, force_review=False, now=None):
             annual_review = force_review and _profile_review_due(
                 (prior or {}).get("lastProfileReview"), now_et,
             )
+            migration = bool(prior) and prior.get("profileSchemaVersion") != COMPANY_PROFILE_SCHEMA_VERSION
             merged = _merged_profile(
-                prior, candidate, reviewed_at, allow_replace=annual_review,
+                prior, candidate, reviewed_at, allow_replace=annual_review, migration=migration,
             )
-            if _profile_requires_write(prior, merged, annual_review=annual_review):
+            if _profile_requires_write(prior, merged, annual_review=annual_review, migration=migration):
                 updates[ticker] = merged
         if updates:
             _upsert_company_profiles(updates)

@@ -52,7 +52,7 @@ EOD_DECISION_NODE_PATH=/path/to/node
 - 当前真正用于决策的 Direction、Confirmation、Risk、Exhaustion。
 - 紧凑 Market context、supporting / limiting reasons、material-change 状态。
 - 紧凑 canonical technical feature snapshot：MA、RSI、MACD、ADX/DI、ATR、Bollinger、KDJ、OBV/RVOL、Relative Strength、Fibonacci provenance / selected structure、52W context。
-- Stock 的 Primary Classification、Company Traits、Lifecycle、应用 modifiers；或 ETF 的 leveraged、direction、underlying、ETF modifiers。
+- Stock 的 Primary Classification、Company Traits、Lifecycle、应用 modifiers，以及仅供离线分析的内部 `sizeClass`；或 ETF 的 leveraged、direction、underlying、ETF modifiers。`sizeClass` 不会成为 Company Trait 或 Dashboard UI 标签，旧历史行也不会被回写。
 
 **不会**保存原始 OHLCV 数组、每根 1H/4H/Daily/Weekly bar、完整指标 series、目标价、旧 Action Score 或任何 Recommendation history cache。
 

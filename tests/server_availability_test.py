@@ -328,12 +328,14 @@ class CompanyProfilePersistenceTests(unittest.TestCase):
         return {"metadata": {"quoteType": "EQUITY", **(metadata or {})}}
 
     @staticmethod
-    def complete_profile(primary="Semiconductors", business="MegaCap", risk="HighVolatility", lifecycle="Scaling"):
+    def complete_profile(primary="Semiconductors", business="HighGrowth", risk="HighVolatility", lifecycle="Scaling", size="MegaCap"):
         return {
             "primaryClassification": primary, "businessTrait": business,
             "riskTrait": risk, "lifecycle": lifecycle,
+            "sizeClass": size, "profileSchemaVersion": "2.1",
             "companyTraits": [business, risk], "profileStatus": "complete",
             "profileSource": "automatic", "profileEvidence": {"primaryClassification": ["industry:test"]},
+            "profileSufficiency": {"primaryClassification": "sufficient", "businessTrait": "sufficient", "riskTrait": "sufficient", "lifecycle": "sufficient", "sizeClass": "sufficient"},
         }
 
     def test_profile_store_persists_and_complete_profile_does_not_churn_hourly(self):
@@ -341,7 +343,9 @@ class CompanyProfilePersistenceTests(unittest.TestCase):
         with patch.object(server, "_classify_company_profiles", return_value={"NEW": self.complete_profile()} ) as classify:
             first = server.ensure_company_profiles_for_quotes(quotes, now=datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("America/New_York")))
             self.assertEqual(first["NEW"]["primaryClassification"], "Semiconductors")
-            self.assertEqual(first["NEW"]["companyTraits"], ["MegaCap", "HighVolatility"])
+            self.assertEqual(first["NEW"]["companyTraits"], ["HighGrowth", "HighVolatility"])
+            self.assertEqual(first["NEW"]["sizeClass"], "MegaCap")
+            self.assertEqual(first["NEW"]["profileSchemaVersion"], "2.1")
             self.assertEqual(first["NEW"]["profileConfidence"], 0.82)
             # Simulate an in-memory restart by reading the SQLite source anew.
             persisted = server.load_company_profiles(["NEW"])
@@ -396,9 +400,70 @@ class CompanyProfilePersistenceTests(unittest.TestCase):
         sparse = {"profileEvidence": {}}
         merged = server._merged_profile(original, sparse, "2027-03-31T12:00:00-04:00", allow_replace=True)
         self.assertEqual(merged["primaryClassification"], "Semiconductors")
-        self.assertEqual(merged["businessTrait"], "MegaCap")
+        self.assertEqual(merged["businessTrait"], "HighGrowth")
         self.assertEqual(merged["riskTrait"], "HighVolatility")
         self.assertEqual(merged["lifecycle"], "Scaling")
+
+    def test_annual_review_can_replace_all_visible_slots_only_with_new_sufficient_evidence(self):
+        existing = self.complete_profile(
+            primary="Semiconductors", business="HighGrowth", risk="HighVolatility", lifecycle="Scaling", size="NonMegaCap",
+        )
+        replacement = self.complete_profile(
+            primary="Enterprise Software", business="MatureGrowth", risk=None, lifecycle="EstablishedLeader", size="MegaCap",
+        )
+        replacement["profileSufficiency"]["riskTrait"] = "insufficient"
+        merged = server._merged_profile(existing, replacement, "2027-03-31T12:00:00-04:00", allow_replace=True)
+        self.assertEqual(merged["primaryClassification"], "Enterprise Software")
+        self.assertEqual(merged["businessTrait"], "MatureGrowth")
+        self.assertEqual(merged["riskTrait"], "HighVolatility", "sparse annual metadata cannot erase a prior valid slot")
+        self.assertEqual(merged["lifecycle"], "EstablishedLeader")
+        self.assertEqual(merged["sizeClass"], "MegaCap")
+
+    def test_v21_migration_replaces_old_slots_once_and_keeps_size_internal(self):
+        server.init_watchlist_db()
+        with server.get_watchlist_connection() as conn:
+            conn.execute(
+                """INSERT INTO company_profiles (
+                    ticker, primary_classification, business_trait, risk_trait, lifecycle,
+                    profile_status, profile_source, profile_evidence_json, profile_confidence,
+                    last_profile_review, profile_schema_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("V21", "Semiconductors", "MegaCap", "HighVolatility", "Scaling", "complete", "automatic", "{}", 0.82, "2026-03-31T03:30:00-04:00", "2.0"),
+            )
+            conn.commit()
+        migrated = self.complete_profile(primary="Enterprise Software", business="MatureGrowth", risk=None, lifecycle="EstablishedLeader", size="MegaCap")
+        with patch.object(server, "_classify_company_profiles", return_value={"V21": migrated}) as classify:
+            result = server.ensure_company_profiles_for_quotes(
+                {"V21": self.stock_quote({"industry": "Software - Application", "marketCap": 300_000_000_000})},
+                now=datetime(2026, 9, 12, 12, tzinfo=ZoneInfo("America/New_York")),
+            )
+            self.assertEqual(result["V21"]["primaryClassification"], "Enterprise Software")
+            self.assertEqual(result["V21"]["businessTrait"], "MatureGrowth")
+            self.assertEqual(result["V21"]["sizeClass"], "MegaCap")
+            self.assertEqual(result["V21"]["profileSchemaVersion"], "2.1")
+            self.assertNotIn("MegaCap", result["V21"]["companyTraits"])
+            self.assertEqual(classify.call_count, 1)
+        with patch.object(server, "_classify_company_profiles") as classify:
+            server.ensure_company_profiles_for_quotes(
+                {"V21": self.stock_quote({"industry": "Banking", "marketCap": 1})},
+                now=datetime(2026, 9, 13, 12, tzinfo=ZoneInfo("America/New_York")),
+            )
+            classify.assert_not_called()
+
+    def test_v21_migration_removes_legacy_megacap_even_when_fresh_metadata_is_sparse(self):
+        legacy = {
+            "primaryClassification": "Semiconductors", "businessTrait": "MegaCap", "riskTrait": "HighVolatility", "lifecycle": "Scaling",
+            "profileStatus": "complete", "profileSource": "automatic", "profileEvidence": {}, "profileConfidence": 0.82,
+        }
+        sparse_candidate = {
+            "primaryClassification": "Semiconductors", "businessTrait": None, "riskTrait": None, "lifecycle": None, "sizeClass": None,
+            "profileSufficiency": {"primaryClassification": "sufficient", "businessTrait": "insufficient", "riskTrait": "insufficient", "lifecycle": "insufficient", "sizeClass": "insufficient"},
+            "profileEvidence": {"primaryClassification": ["industry:semiconductors"]}, "profileSchemaVersion": "2.1",
+        }
+        migrated = server._merged_profile(legacy, sparse_candidate, "2026-09-12T12:00:00-04:00", migration=True)
+        self.assertIsNone(migrated["businessTrait"])
+        self.assertNotIn("MegaCap", migrated["companyTraits"])
+        self.assertEqual(migrated["profileSchemaVersion"], "2.1")
 
     def test_etf_skips_stock_classifier_and_annual_review_uses_force_path(self):
         etf = {"QQQ": {"metadata": {"quoteType": "ETF", "industry": "Exchange Traded Fund"}}}

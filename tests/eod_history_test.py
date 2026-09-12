@@ -57,9 +57,9 @@ def record(ticker="NVDA", horizon="short", **changes):
         "technical_features": {"horizon": horizon, "momentum": {"rsi": {"value": 58}}},
         "supporting_reasons": ["Trend is constructive."], "limiting_reasons": ["Price is neutral."],
         "primary_classification": "Semiconductors", "lifecycle": "EstablishedLeader",
-        "company_traits": ["MegaCap", "HighVolatility"],
+        "size_class": "MegaCap", "company_traits": ["HighGrowth", "HighVolatility"],
         "applied_profile_modifiers": {
-            "effective": {"riskSensitivity": 1.0}, "business_trait": "MegaCap",
+            "effective": {"riskSensitivity": 1.0}, "business_trait": "HighGrowth", "size_class": "MegaCap",
             "risk_trait": "HighVolatility", "profile_status": "complete", "profile_source": "automatic",
         },
         "leveraged": None, "etf_direction": None, "underlying": None, "etf_modifiers": None,
@@ -136,9 +136,10 @@ class EodHistoryDatabaseTests(unittest.TestCase):
             raw = conn.execute("SELECT company_traits_json, applied_profile_modifiers_json FROM decision_history WHERE ticker='NVDA'").fetchone()
         finally:
             conn.close()
-        self.assertEqual(json.loads(raw[0]), ["MegaCap", "HighVolatility"])
+        self.assertEqual(json.loads(raw[0]), ["HighGrowth", "HighVolatility"])
         profile = json.loads(raw[1])
-        self.assertEqual(profile["business_trait"], "MegaCap")
+        self.assertEqual(profile["business_trait"], "HighGrowth")
+        self.assertEqual(profile["size_class"], "MegaCap")
         self.assertEqual(profile["risk_trait"], "HighVolatility")
         self.assertEqual(profile["profile_status"], "complete")
 
